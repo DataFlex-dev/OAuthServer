@@ -1,0 +1,14 @@
+Struct tOidcRequest
+    String sAuditId
+    String sEndpoint
+    String sClientId
+    String sSubjectId
+    String sIpAddress
+    String sHttpMethod
+    String sRequestData
+    String sResponseStatus
+    String sScope
+    String sErrorCode
+    String sErrorMessage
+    DateTime dtTimestamp
+End_Struct

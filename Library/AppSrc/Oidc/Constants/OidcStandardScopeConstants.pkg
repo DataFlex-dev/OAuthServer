@@ -1,0 +1,7 @@
+// scopes
+Define C_OIDC_SCOPE_OPENID          for "openid"
+Define C_OIDC_SCOPE_PROFILE         for "profile"
+Define C_OIDC_SCOPE_EMAIL           for "email"
+Define C_OIDC_SCOPE_ADDRESS         for "address"
+Define C_OIDC_SCOPE_PHONE           for "phone"
+Define C_OIDC_SCOPE_OFFLINE_ACCESS  for "offline_access"

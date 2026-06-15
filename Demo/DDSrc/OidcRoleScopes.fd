@@ -1,0 +1,4 @@
+#REPLACE FILE11 OidcRoleScopes
+#REPLACE OidcRoleScopes.File_Number |CI11
+#REPLACE OidcRoleScopes.RoleId |FN11,1
+#REPLACE OidcRoleScopes.Scope |FS11,2

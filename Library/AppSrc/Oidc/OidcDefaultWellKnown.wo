@@ -1,0 +1,10 @@
+﻿Use Oidc\cOidcWellKnownHandler.pkg
+Use Oidc\OidcDefaultProvider.wo
+Use Oidc\OidcDefaultKeyStore.wo
+Use Oidc\OidcDefaultHandler.wo
+
+Object oOidcWellKnown is a cOidcWellKnownHandler
+    Set phoOidcProvider         to oOidcDefaultProvider
+    Set phoOidcKeyStore         to oOidcDefaultKeyStore
+    Set phoOidcHandler          to oOidcDefaultHandler
+End_Object

@@ -1,0 +1,6 @@
+Use Oidc\cOidcProviderStandard.pkg
+Use Oidc\OidcDefaultKeyStore.wo
+
+Object oOidcDefaultProvider is a cOidcProviderStandard
+    Set phoOidcKeyStore to oOidcDefaultKeyStore
+End_Object

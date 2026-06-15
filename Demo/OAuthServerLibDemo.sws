@@ -1,0 +1,14 @@
+{
+    "dependencies": [
+        "DataFlex-dev/Web UI Server#1.0.46",
+        "DataFlex-dev/Web UI Material Theme#1.0.3",
+        "DataFlex-dev/OAuth Server Lib#1.1.0"
+    ],
+    "df": 26.0,
+    "projects": [
+        "WebApp.src"
+    ],
+    "studio": {
+        "DefaultFormHeight": 12
+    }
+}

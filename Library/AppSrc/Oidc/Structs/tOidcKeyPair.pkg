@@ -1,0 +1,5 @@
+Struct tOidcKeyPair
+    String sKid
+    String sPublic
+    String sPrivate
+End_Struct

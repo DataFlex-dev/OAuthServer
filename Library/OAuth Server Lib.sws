@@ -1,0 +1,29 @@
+{
+    "dependencies": [
+        "DataFlex-dev/JsonWebToken#<2.0.0",
+        "DataFlex-dev/Security (Libsodium)#<2.0.0"
+    ],
+    "description": "The official OAuth Server library for DataFlex WebApps",
+    "df": 26.0,
+    "package": {
+        "icon": "OAuthServer.png",
+        "includeFiles": [
+            "AppSrc/Oidc/OidcError.html"
+        ],
+        "install": [
+            "${Programs}\\libcrypto-3-x64.dll",
+            "${Programs}\\libcrypto-3.dll"
+        ],
+        "license": "BSD-3-Clause",
+        "version": "1.1.0"
+    },
+    "paths": {
+        "appSrc": [
+            "AppSrc",
+            "DDSrc"
+        ]
+    },
+    "studio": {
+        "DefaultFormHeight": 12
+    }
+}

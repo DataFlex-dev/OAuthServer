@@ -1,0 +1,14 @@
+#REPLACE FILE3 OidcClient
+#REPLACE OidcClient.File_Number |CI3
+#REPLACE OidcClient.ClientId |FS3,1
+#REPLACE OidcClient.ClientName |FS3,2
+#REPLACE OidcClient.ClientDescription |FS3,3
+#REPLACE OidcClient.ClientLogoURL |FS3,4
+#REPLACE OidcClient.ClientBrandColor |FS3,5
+#REPLACE OidcClient.ClientType |FS3,6
+#REPLACE OidcClient.ClientSecret |FS3,7
+#REPLACE OidcClient.IdTokenLifetime |FN3,8
+#REPLACE OidcClient.AccessTokenLifetime |FN3,9
+#REPLACE OidcClient.RefreshTokenLifetime |FN3,10
+#REPLACE OidcClient.Enabled |FN3,11
+#REPLACE OidcClient.CreatedAt |FM3,12

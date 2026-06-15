@@ -1,0 +1,268 @@
+#IFNDEF C_OPENSSL_DLL_NAME
+#IFDEF IS$WIN64
+  Define C_OPENSSL_DLL_NAME for libcrypto-3-x64.dll
+#ELSE
+  Define C_OPENSSL_DLL_NAME for libcrypto-3.dll
+#ENDIF 
+#ENDIF
+
+// OpenSSL constants
+// Common public exponent value
+Define RSA_F4 for 65537
+// BIO Method for memory buffer
+Define BIO_METHOD_s_mem for 1
+Define NID_rsaEncryption for 6
+
+// BIO *BIO_new_file(const Char *filename, const Char *mode);
+//{ Visibility=Private }
+External_Function OpenSSL_BIO_new_file "BIO_new_file" C_OPENSSL_DLL_NAME ;
+    Pointer pFilename ;
+    Pointer pMode     ;
+    Returns Pointer
+    
+// OSSL_DECODER_CTX_new_for_pkey(EVP_PKEY **pkey,
+//                              const Char *input_type,
+//                              const Char *input_struct,
+//                              const Char *keytype, int selection,
+//                              OSSL_LIB_CTX *libctx, const Char *propquery);
+//{ Visibility=Private }
+External_Function OpenSSL_OSSL_DECODER_CTX_new_for_pkey "OSSL_DECODER_CTX_new_for_pkey" C_OPENSSL_DLL_NAME ;
+    Pointer ppKey           ;
+    Pointer pInputType      ;
+    Pointer pInputStruct    ;
+    Pointer pKeyType        ;
+    Integer iSelection      ;
+    Pointer pOsslLibCtx     ;
+    Pointer pPropQuery      ;
+    Returns Pointer
+
+// int OSSL_DECODER_from_bio(OSSL_DECODER_CTX *ctx, BIO *in);
+//{ Visibility=Private }
+External_Function OpenSSL_OSSL_DECODER_from_bio "OSSL_DECODER_from_bio" C_OPENSSL_DLL_NAME ;
+    Pointer pCtx    ;
+    Pointer pBio    ;
+    Returns Integer
+    
+// void OSSL_DECODER_CTX_free(OSSL_DECODER_CTX *ctx);
+//{ Visibility=Private }
+External_Function OpenSSL_OSSL_DECODER_CTX_free "OSSL_DECODER_CTX_free" C_OPENSSL_DLL_NAME ;
+    Pointer pCtx    ;
+    Returns Void_Type
+    
+// int BIO_free(BIO *a);
+//{ Visibility=Private }
+External_Function OpenSSL_BIO_free "BIO_free" C_OPENSSL_DLL_NAME ;
+    Pointer pAddr   ;
+    Returns Integer
+    
+// int EVP_PKEY_free(EVP_PKEY *key);
+//{ Visibility=Private }
+External_Function OpenSSL_EVP_PKEY_free "EVP_PKEY_free" C_OPENSSL_DLL_NAME ;
+    Pointer pKey   ;
+    Returns Void_Type
+
+
+// int EVP_PKEY_get_bn_param(const EVP_PKEY *pkey, const char *key_name, BIGNUM **bn);
+//{ Visibility=Private }
+External_Function OpenSSL_EVP_PKEY_get_bn_param "EVP_PKEY_get_bn_param" C_OPENSSL_DLL_NAME ;
+    Pointer pKey        ;
+    Pointer pKeyName    ;
+    Pointer ppBignum    ;
+    Returns Integer
+
+// void BN_free(BIGNUM *a);
+//{ Visibility=Private }
+External_Function OpenSSL_BN_free "BN_free" C_OPENSSL_DLL_NAME ;
+    Pointer pBignum   ;
+    Returns Void_Type
+    
+// int BN_bn2hex(const BIGNUM *a);
+//{ Visibility=Private }
+External_Function OpenSSL_BN_bn2hex "BN_bn2hex" C_OPENSSL_DLL_NAME ;
+    Pointer pBignum;
+    Returns Pointer
+    
+// void CRYPTO_free(void *ptr, const char *file, int line);
+//{ Visibility=Private }
+External_Function OpenSSL_CRYPTO_free "CRYPTO_free" C_OPENSSL_DLL_NAME ;
+    Pointer pAddr ;
+    Pointer pFile ;  // can be 0
+    Integer iLine ;
+    Returns Void_Type
+    
+// int EVP_PKEY_id(const EVP_PKEY *key);
+//{ Visibility=Private }
+External_Function OpenSSL_EVP_PKEY_id "EVP_PKEY_id" C_OPENSSL_DLL_NAME ;
+    Pointer pKey ;
+    Returns Integer
+    
+// int EVP_PKEY_get_id(const EVP_PKEY *pkey);
+//{ Visibility=Private }
+External_Function OpenSSL_EVP_PKEY_get_id "EVP_PKEY_get_id" C_OPENSSL_DLL_NAME ;
+    Pointer pKey ;
+    Returns Integer
+
+// int EVP_PKEY_get_base_id(const EVP_PKEY *pkey);
+//{ Visibility=Private }
+External_Function OpenSSL_EVP_PKEY_get_base_id "EVP_PKEY_get_base_id" C_OPENSSL_DLL_NAME ;
+    Pointer pKey ;
+    Returns Integer
+
+// int OSSL_DECODER_CTX_get_num_decoders(OSSL_DECODER_CTX *ctx);
+//{ Visibility=Private }
+External_Function OpenSSL_OSSL_DECODER_CTX_get_num_decoders "OSSL_DECODER_CTX_get_num_decoders" C_OPENSSL_DLL_NAME ;
+    Pointer pCtx ;
+    Returns Integer
+    
+// unsigned long ERR_get_error(void);
+//{ Visibility=Private }
+External_Function OpenSSL_ERR_get_error "ERR_get_error" C_OPENSSL_DLL_NAME ;
+    Returns UBigInt
+    
+// void ERR_error_string_n(unsigned long e, char *buf, size_t len);
+//{ Visibility=Private }
+External_Function OpenSSL_ERR_error_string_n "ERR_error_string_n" C_OPENSSL_DLL_NAME ;
+    UBigInt  iError ;
+    Pointer  pBuffer ;
+    UInteger iLen ;
+    Returns Void_Type
+    
+//// RSA *EVP_PKEY_get0_RSA(const EVP_PKEY *pkey);
+//{ Visibility=Private }
+External_Function OpenSSL_EVP_PKEY_get0_RSA "EVP_PKEY_get0_RSA" C_OPENSSL_DLL_NAME ;
+    Pointer pKey ;
+    Returns Pointer // Returns the underlying RSA* structure
+
+// void RSA_get0_key(const RSA *r, const BIGNUM **n, const BIGNUM **e, const BIGNUM **d);
+//{ Visibility=Private }
+External_Function OpenSSL_RSA_get0_key "RSA_get0_key" C_OPENSSL_DLL_NAME ;
+    Pointer pRSA    ;
+    Pointer ppN     ; // AddressOf(pSomething)
+    Pointer ppE     ;
+    Pointer ppD     ;
+    Returns Void_Type // Returns the underlying RSA* structure
+
+// const char *EVP_PKEY_get0_type_name(const EVP_PKEY *key);
+//{ Visibility=Private }
+External_Function OpenSSL_EVP_PKEY_get0_type_name "EVP_PKEY_get0_type_name" C_OPENSSL_DLL_NAME ;
+    Pointer pKey    ;
+    Returns Pointer
+
+// int BN_bn2bin(const BIGNUM *a, unsigned char *to);
+//{ Visibility=Private }
+External_Function OpenSSL_BN_bn2bin "BN_bn2bin" C_OPENSSL_DLL_NAME ;
+    Pointer pBignum ;
+    Pointer pTo     ; // AddressOf(ucaList)
+    Returns Integer     
+    
+// int BN_num_bits(const BIGNUM *a);
+//{ Visibility=Private }
+External_Function OpenSSL_BN_num_bits "BN_num_bits" C_OPENSSL_DLL_NAME ;
+    Pointer pBignum ;
+    Returns Integer
+    
+// int BIO_read_ex(BIO *b, void *data, size_t dlen, size_t *readbytes);
+//{ Visibility=Private }
+External_Function OpenSSL_BIO_read_ex "BIO_read_ex" C_OPENSSL_DLL_NAME ;
+    Pointer  pBio           ;
+    Pointer  pBuf           ;
+    UInteger uiLen          ;
+    Pointer  pUiReadbytes   ;
+    Returns Integer
+
+// int BIO_read(BIO *b, void *data, int dlen);
+//{ Visibility=Private }
+External_Function OpenSSL_BIO_read "BIO_read" C_OPENSSL_DLL_NAME ;
+    Pointer  pBio   ;
+    Pointer  pBuf   ;
+    Integer  iLen   ;
+    Returns Integer
+    
+// int BIO_gets(BIO *b, char *buf, int size);
+//{ Visibility=Private }
+External_Function OpenSSL_BIO_gets "BIO_gets" C_OPENSSL_DLL_NAME ;
+    Pointer pBio            ;
+    Pointer pBuf            ;
+    Integer iLen            ;
+    Returns Integer
+    
+// int EVP_PKEY_get_raw_private_key(const EVP_PKEY *pkey, unsigned char *priv, size_t *len);
+//{ Visibility=Private }
+External_Function OpenSSL_EVP_PKEY_get_raw_private_key "EVP_PKEY_get_raw_private_key" C_OPENSSL_DLL_NAME ;
+    Pointer pKey            ;
+    Pointer pBuf            ;
+    Integer iLen            ;
+    Returns Integer
+    
+// int EVP_PKEY_get_raw_public_key(const EVP_PKEY *pkey, unsigned char *pub, size_t *len);
+//{ Visibility=Private }
+External_Function OpenSSL_EVP_PKEY_get_raw_public_key "EVP_PKEY_get_raw_public_key" C_OPENSSL_DLL_NAME ;
+    Pointer pKey            ;
+    Pointer pBuf            ;
+    Integer iLen            ;
+    Returns Integer
+    
+// const BIO_METHOD *BIO_s_mem(void);
+//{ Visibility=Private }
+External_Function OpenSSL_BIO_s_mem "BIO_s_mem" C_OPENSSL_DLL_NAME ;
+    Returns Pointer
+
+// BIO *BIO_new(const BIO_METHOD *type);
+External_Function OpenSSL_BIO_new "BIO_new" C_OPENSSL_DLL_NAME ;
+    Pointer pType   ;
+    Returns Pointer
+
+// EVP_PKEY *PEM_read_bio_PUBKEY(BIO *bp, EVP_PKEY **x, pem_password_cb *cb, void *u);
+//{ Visibility=Private }
+External_Function OpenSSL_PEM_read_bio_PUBKEY "PEM_read_bio_PUBKEY" C_OPENSSL_DLL_NAME ;
+    Pointer pBio            ;
+    Pointer pPKey           ;
+    Pointer pCallback       ;
+    Pointer pUserData       ;
+    Returns Pointer
+
+// EVP_PKEY *PEM_read_bio_PrivateKey(BIO *bp, EVP_PKEY **x, pem_password_cb *cb, void *u);
+//{ Visibility=Private }
+External_Function OpenSSL_PEM_read_bio_PrivateKey "PEM_read_bio_PrivateKey" C_OPENSSL_DLL_NAME ;
+    Pointer pBio            ;
+    Pointer pPKey           ;
+    Pointer pCallback       ;
+    Pointer pUserData       ;
+    Returns Pointer
+
+// void OPENSSL_free(void *addr);
+//{ Visibility=Private }
+External_Function OpenSSL_OPENSSL_free "OPENSSL_free" C_OPENSSL_DLL_NAME ;
+    Pointer pAddr           ;
+    Returns Integer
+
+// void *OPENSSL_malloc(size_t num);
+//{ Visibility=Private }
+External_Function OpenSSL_OPENSSL_malloc "OPENSSL_malloc" C_OPENSSL_DLL_NAME ;
+    Integer iSize           ;
+    Returns Pointer
+
+// int PEM_write_bio_PrivateKey(BIO *bp, EVP_PKEY *x, const EVP_CIPHER *enc, unsigned char *kstr, int klen, pem_password_cb *cb, void *u);
+//{ Visibility=Private }
+External_Function OpenSSL_PEM_write_bio_PrivateKey "PEM_write_bio_PrivateKey" C_OPENSSL_DLL_NAME ;
+    Pointer pBio            ;
+    Pointer pPKey           ;
+    Pointer pEnc            ;
+    Pointer pKeyStr         ;
+    Integer iKeyLen         ;
+    Pointer pCallback       ;
+    Pointer pUserData       ;
+    Returns Integer
+
+// int PEM_write_bio_PUBKEY(BIO *bp, EVP_PKEY *x);
+//{ Visibility=Private }
+External_Function OpenSSL_PEM_write_bio_PUBKEY "PEM_write_bio_PUBKEY" C_OPENSSL_DLL_NAME ;
+    Pointer pBio            ;
+    Pointer pPKey           ;
+    Returns Integer
+
+// long BIO_ctrl_pending(BIO *b);
+//{ Visibility=Private }
+External_Function OpenSSL_BIO_ctrl_pending "BIO_ctrl_pending" C_OPENSSL_DLL_NAME ;
+    Pointer pBio            ;
+    Returns Integer

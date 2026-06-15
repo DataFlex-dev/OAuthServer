@@ -1,0 +1,45 @@
+Define C_OIDC_OSSL_READ_MODE         for "r"
+Define C_OIDC_OSSL_INPUT_TYPE_PEM    for "pem"
+
+// PEM files
+Define C_OIDC_PKCS8_PUBLIC_BEGIN  for "-----BEGIN PUBLIC KEY-----"
+Define C_OIDC_PKCS8_PUBLIC_END    for "-----END PUBLIC KEY-----"
+Define C_OIDC_PKCS8_PRIVATE_BEGIN for "-----BEGIN PRIVATE KEY-----"
+Define C_OIDC_PKCS8_PRIVATE_END   for "-----END PRIVATE KEY-----"
+
+// Key types of OpenSSL
+Define C_OIDC_OSSL_KEY_TYPE_RSA                 for "RSA"
+Define C_OIDC_OSSL_KEY_TYPE_RSA_PSS             for "RSA-PSS"
+Define C_OIDC_OSSL_KEY_TYPE_DSA                 for "DSA"
+Define C_OIDC_OSSL_KEY_TYPE_EC                  for "ECDSA"
+Define C_OIDC_OSSL_KEY_TYPE_ED25519             for "ed25519"
+Define C_OIDC_OSSL_KEY_TYPE_ED448               for "ed448"
+Define C_OIDC_OSSL_KEY_TYPE_GostR3410_2001      for "gost2001"
+Define C_OIDC_OSSL_KEY_TYPE_GostR3410_2012_256  for "gost2012_256"
+Define C_OIDC_OSSL_KEY_TYPE_GostR3410_2012_512  for "gost2012_512"
+
+// Algorithms
+Define C_OIDC_OSSL_ALG_RS256            for "RS256"
+Define C_OIDC_OSSL_ALG_RS384            for "RS384"
+Define C_OIDC_OSSL_ALG_RS512            for "RS512"
+
+Define C_OIDC_OSSL_ALG_PS256            for "PS256"
+Define C_OIDC_OSSL_ALG_PS384            for "PS384"
+Define C_OIDC_OSSL_ALG_PS512            for "PS512"
+
+Define C_OIDC_OSSL_ALG_EdDSA            for "EdDSA"
+
+Define C_OIDC_OSSL_ALG_ES256            for "ES256"
+Define C_OIDC_OSSL_ALG_ES384            for "ES384"
+Define C_OIDC_OSSL_ALG_ES512            for "ES512"
+
+// EC Curves
+Define C_OIDC_OSSL_ALG_ES256_CURVE      for "P-256"
+Define C_OIDC_OSSL_ALG_ES256K_CURVE     for "P-256K"
+Define C_OIDC_OSSL_ALG_ES384_CURVE      for "P-384"
+Define C_OIDC_OSSL_ALG_ES512_CURVE      for "P-521"
+
+// Keymgmt parameter
+Define C_OSSL_KEYMGMT_SELECT_KEYPAIR        for 1
+Define C_OSSL_KEYMGMT_SELECT_PUBLIC_KEY     for 2
+Define C_OSSL_KEYMGMT_SELECT_PRIVATE_KEY    for 4

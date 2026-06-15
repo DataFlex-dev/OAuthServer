@@ -1,0 +1,20 @@
+Use tNameValuePair.pkg
+
+Struct tOidcUserInfo
+    String   sSubject               // The subject's identifier (sub)
+    String   sFullName              // Fullname
+    String   sGivenName             // first name
+    String   sMiddleName            // middle name
+    String   sFamilyName            // last name
+    String   sPreferredUsername     // username
+    String   sEmail                 // email
+    Boolean  bEmailVerified         // email verified?
+    String   sPicture               // url to profile picture
+    String   sZoneInfo              // timezone of the user
+    String   sLocale                // locale of the user
+    String   sProfile               // url to a (public) profile page
+    DateTime dtLastLogin            // Last time the user logged in
+    DateTime dtLastUpdate           // Last time the user profile has been updated
+    String   sHashedPassword         // The users hashed password used by the cOidcSessionManager
+    tNameValuePair[] atCustomClaims // custom claims
+End_Struct

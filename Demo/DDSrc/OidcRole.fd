@@ -1,0 +1,8 @@
+#REPLACE FILE10 OidcRole
+#REPLACE OidcRole.File_Number |CI10
+#REPLACE OidcRole.RoleId |FN10,1
+#REPLACE OidcRole.RoleName |FS10,2
+#REPLACE OidcRole.Description |FS10,3
+#REPLACE OidcRole.ClientId |FS10,4
+#REPLACE OidcRole.IsDefault |FN10,5
+#REPLACE OidcRole.CreatedAt |FM10,6

@@ -1,0 +1,14 @@
+#REPLACE FILE5 OidcRequestAudit
+#REPLACE OidcRequestAudit.File_Number |CI5
+#REPLACE OidcRequestAudit.AuditId |FN5,1
+#REPLACE OidcRequestAudit.Timestamp |FM5,2
+#REPLACE OidcRequestAudit.Endpoint |FS5,3
+#REPLACE OidcRequestAudit.ClientId |FS5,4
+#REPLACE OidcRequestAudit.SubId |FS5,5
+#REPLACE OidcRequestAudit.IPAddress |FS5,6
+#REPLACE OidcRequestAudit.HttpMethod |FS5,7
+#REPLACE OidcRequestAudit.RequestData |FS5,8
+#REPLACE OidcRequestAudit.ResponseStatus |FN5,9
+#REPLACE OidcRequestAudit.ErrorCode |FS5,10
+#REPLACE OidcRequestAudit.ErrorMessage |FS5,11
+#REPLACE OidcRequestAudit.Scope |FS5,12

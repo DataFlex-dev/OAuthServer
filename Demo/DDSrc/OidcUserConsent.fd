@@ -1,0 +1,6 @@
+#REPLACE FILE7 OidcUserConsent
+#REPLACE OidcUserConsent.File_Number |CI7
+#REPLACE OidcUserConsent.ClientId |FS7,1
+#REPLACE OidcUserConsent.SubId |FS7,2
+#REPLACE OidcUserConsent.Scopes |FS7,3
+#REPLACE OidcUserConsent.GrantedAt |FM7,4

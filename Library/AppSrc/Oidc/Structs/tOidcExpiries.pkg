@@ -1,0 +1,5 @@
+Struct tOidcExpiries
+    Integer iIDTokenLifetime
+    Integer iAccessTokenLifetime
+    Integer iRefreshTokenLifetime
+End_Struct

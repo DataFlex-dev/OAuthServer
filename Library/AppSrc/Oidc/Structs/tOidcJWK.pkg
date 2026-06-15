@@ -1,0 +1,30 @@
+Struct tOidcJWK
+    // Required Parameters (RFC 7517)
+    { Name="kid" }
+    String sKid               // "kid" (Key ID), uniquely identifies the key. RECOMMENDED.
+    { Name="kty" }
+    String sKty               // "kty" (Key Type), e.g., "RSA" or "EC". REQUIRED.
+
+    // Recommended Parameters for Oidc
+    { Name="use" }
+    String sUse               // "use" (Public Key Use), should be "sig" for signing/verification. RECOMMENDED.
+    { Name="alg" }
+    String sAlg               // "alg" (Algorithm), e.g., "RS256", "ES256". OPTIONAL but useful.
+    
+    // RSA Specific Key Material (REQUIRED if kty is "RSA")
+    { Name="n" }
+    String sN                 // "n" (Modulus), Base64URL-encoded value of the RSA public key modulus.
+    { Name="e" }
+    String sE                 // "e" (Exponent), Base64URL-encoded value of the RSA public exponent.
+    
+    // ECDSA Specific Key Material (REQUIRED if kty is "EC")
+    { Name="crv" }
+    String sCrv               // Curve name ("P-256", "P-384", "P-521")
+    { Name="x" }
+    String sX                 // X coordinate of public point (base64url)
+    
+    { Name="JwtPublicPem" } 
+    String sPublicPem         // The raw pem contents of the public key
+    { Name="JwtPrivatePem" }
+    String sPrivatePem        // The raw pem contents of the private key
+End_Struct

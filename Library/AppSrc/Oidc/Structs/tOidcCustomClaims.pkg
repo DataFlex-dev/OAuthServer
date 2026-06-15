@@ -1,0 +1,7 @@
+Use tNameValuePair.pkg
+
+Struct tOidcCustomClaims
+    tNameValuePair[] atIdClaims
+    tNameValuePair[] atAccessClaims
+    tNameValuePair[] atRefreshClaims
+End_Struct

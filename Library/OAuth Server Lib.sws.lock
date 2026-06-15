@@ -1,0 +1,14 @@
+{
+    "dependencies": {
+        "DataFlex-dev/JsonWebToken": {
+            "ref": "1.0.0"
+        },
+        "DataFlex-dev/Security (Libsodium)": {
+            "ref": "1.0.0"
+        },
+        "DataFlex-dev/Security (core)": {
+            "ref": "1.0.0"
+        }
+    },
+    "lockVersion": "1.0.0"
+}

@@ -12,3 +12,10 @@ Demo/AppHtml/CssThemes
 Demo/AppHtml/DfEngine
 Demo/AppHtml/web.config
 Demo/AppHtml/global.asa
+Library/DfPkg
+Library/Programs/l8w8jwt2.dll
+Library/Programs/l8w8jwt264.dll
+Library/Programs/libsodium.dll
+Library/Programs/libsodium64.dll
+Demo/AppHtml/WebUI
+Demo/DfPkg

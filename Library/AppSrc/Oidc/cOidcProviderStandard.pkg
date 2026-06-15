@@ -1,0 +1,896 @@
+﻿Use Oidc\cOidcProvider.pkg
+Use cPasswordHasher.pkg
+Use cCryptographerEx.pkg
+Use Oidc\Structs\tOidcRequest.pkg
+Use Oidc\Structs\tOidcConsentAudit.pkg
+Use Oidc\Constants\OidcDataDictionaryConstants.pkg
+
+Use cOidcAuthorizationCodeDataDictionary.dd
+Use cOidcCallbackURLDataDictionary.dd
+Use cOidcClientDataDictionary.dd
+Use cOidcRevokedRefreshTokenDataDictionary.dd
+Use cOidcClientScopeDataDictionary.dd
+Use cOidcUserConsentDataDictionary.dd
+Use cOidcUserConsentAuditDataDictionary.dd
+Use cOidcRequestAuditDataDictionary.dd
+Use cOidcScopeDataDictionary.dd
+Use cOidcUserRoleDataDictionary.dd
+Use cOidcRoleDataDictionary.dd
+Use cOidcRoleScopesDataDictionary.dd
+Use cWebAppUserDataDictionary.dd
+
+// The standard implementation of the Oidc Provider.
+// It will expect certain tables to exist in your database.
+// Feel free to create a custom class extending this class.
+Class cOidcProviderStandard is a cOidcProvider
+    Procedure Construct_Object
+        Handle hoClientObj hoObj hoRoleObj hoScopeObj
+        
+        Forward Send Construct_Object
+        
+        Property Handle phoClient_DD            0 // Handle to the cOidcClientDataDictionary DDO
+        Property Handle phoAuthCode_DD          0 // Handle to the cOidcAuthorizationCodeDataDictionary DDO  
+        Property Handle phoCallbackUrl_DD       0 // Handle to the cOidcCallbackURLDataDictionary
+        Property Handle phoClientScope_DD       0 // Handle to the cOidcClientScopesDataDictionary
+        Property Handle phoRevokedRT_DD         0 // Handle to the cOidcRevokedRefreshTokenDataDictionary
+        Property Handle phoUserConsent_DD       0 // Handle to the cOidcUserConsentDataDictionary
+        Property Handle phoUserConsentAudit_DD  0 // Handle to the cOidcUserConsentAuditDataDictionary
+        Property Handle phoRequestAudit_DD      0 // Handle to the cOidcRequestAuditDataDictionary
+        Property Handle phoScope_DD             0 // Handle to the cOidcScopeDataDictionary
+        Property Handle phoRole_DD              0 // Handle to the cOidcRoleDataDictionary
+        Property Handle phoRoleScopes_DD        0 // Handle to the cOidcRoleScopesDataDictionary
+        Property Handle phoUserRole_DD          0 // Handle to the cOidcUserRoleDataDictionary
+        Property Handle phoUser_DD              0 // Handle to the cWebAppUserDataDictionary
+        
+        Property Integer piAuthCodeLength       32
+        Property Handle phoCrypto               0 // Handle for a cPasswordHasher (DF 25.0+ only)
+        Property Boolean pbSecretHashing        True // If true it will use phoCrypto to hash and validate hashed instead of plaintext     
+        Property String psApplicationBaseUrl    ""
+        
+        Get CreateNamed (RefClass(cOidcClientDataDictionary)) 'oOidcClient_DD' to hoClientObj
+        Set phoClient_DD            to hoClientObj
+        
+        Get CreateNamed (RefClass(cOidcAuthorizationCodeDataDictionary)) 'oOidcAuthorizationCode_DD' to hoObj
+        Set DDO_Server              of hoObj to hoClientObj
+        Set phoAuthCode_DD          to hoObj
+        
+        Get CreateNamed (RefClass(cOidcCallbackURLDataDictionary)) 'oOidcCallbackURL_DD' to hoObj
+        Set DDO_Server              of hoObj to hoClientObj
+        Set Constrain_File          of hoObj to (Main_File(hoClientObj))
+        Set phoCallbackUrl_DD       to hoObj
+        
+        Get CreateNamed (RefClass(cOidcClientScopeDataDictionary)) 'oOidcClientScope_DD' to hoObj
+        Set DDO_Server              of hoObj to hoClientObj
+        Set Constrain_File          of hoObj to (Main_File(hoClientObj))
+        Set phoClientScope_DD       to hoObj
+        
+        Get CreateNamed (RefClass(cOidcRevokedRefreshTokenDataDictionary)) 'oOidcRevokedRefreshToken_DD' to hoObj
+        Set DDO_Server              of hoObj to hoClientObj
+        Set phoRevokedRT_DD         to hoObj
+        
+        Get CreateNamed (RefClass(cOidcUserConsentDataDictionary)) 'oOidcUserConsent_DD' to hoObj
+        Set phoUserConsent_DD       to hoObj
+        
+        Get CreateNamed (RefClass(cOidcUserConsentAuditDataDictionary)) 'oOidcUserConsentAudit_DD' to hoObj
+        Set phoUserConsentAudit_DD  to hoObj
+        
+        Get CreateNamed (RefClass(cOidcRequestAuditDataDictionary)) 'oOidcRequestAudit_DD' to hoObj
+        Set phoRequestAudit_DD      to hoObj
+        
+        Get CreateNamed (RefClass(cOidcRoleDataDictionary)) 'oOidcRole_DD' to hoRoleObj
+        Set phoRole_DD              to hoRoleObj
+        
+        Get CreateNamed (RefClass(cOidcScopeDataDictionary)) 'oOidcScope_DD' to hoScopeObj
+        Set phoScope_DD             to hoScopeObj
+        
+        Get CreateNamed (RefClass(cOidcRoleScopesDataDictionary)) 'oOidcRoleScopes_DD' to hoObj
+        Set DDO_Server              of hoObj to hoRoleObj
+        Set DDO_Server              of hoObj to hoScopeObj
+        Set Constrain_File          of hoObj to (Main_File(hoRoleObj))
+        Set phoRoleScopes_DD        to hoObj
+        
+        Get CreateNamed (RefClass(cOidcUserRoleDataDictionary)) 'oOidcUserRole_DD' to hoObj
+        Set DDO_Server              of hoObj to hoRoleObj
+        Set phoUserRole_DD          to hoObj
+        
+        Get CreateNamed (RefClass(cWebAppUserDataDictionary)) 'oWebAppUser_DD' to hoObj
+        Set phoUser_DD              to hoObj
+        
+        Get CreateNamed (RefClass(cPasswordHasher)) 'oCrypto' to hoObj
+        Set phoCrypto to hoObj
+    End_Procedure
+    
+    Procedure End_Construct_Object
+        Handle hoCrypto
+        Integer iFieldLen
+        
+        Forward Send End_Construct_Object
+        
+        Get phoCrypto to hoCrypto
+        Get_Attribute DF_FIELD_LENGTH of (RefTable(OidcClient)) (RefTable(OidcClient.ClientSecret)) to iFieldLen
+        If (iFieldLen < (RequiredBufferSize(hoCrypto) + 3)) Begin
+            Error DFERR_PROGRAM (SFormat("The client secret field of OidcClient is not large enough (%1)", iFieldLen))
+        End
+        
+        // Ignore session manager errors, the function will return false
+        // and the handler will know to redirect to the Login page
+        Send IgnoreError DFERR_WEBAPP_BAD_SESSION_KEY
+        Send IgnoreError DFERR_WEBAPP_SESSION_TIMEOUT
+    End_Procedure
+
+    Procedure OnValidateSession
+        String sSessionKey
+        
+        // We catch the "session key not known" error
+        // The validate session of the default session manager clears the properties which is all we need
+        Get GetCookie (psSessionCookieName(ghoWebSessionManager)) to sSessionKey
+        // Forces an OnSessionPropertiesSet if a user is logged in
+        Get ValidateSession of ghoWebSessionManager sSessionKey to gVoid
+    End_Procedure
+    
+    Procedure OnLogoutSession
+        Boolean bLoggedIn
+        
+        Send OnGetIsUserLoggedIn (&bLoggedIn)
+        
+        If (bLoggedIn) Begin
+            Send RequestLogout of ghoWebSessionManager
+        End
+    End_Procedure
+    
+    Procedure OnGetUserId String ByRef sUserId
+        Get psLoginName of ghoWebSessionManager to sUserId
+    End_Procedure
+    
+    Procedure OnGetUserIdFromLoginName String sLoginName String ByRef sUserId
+        // For the WebApp user table this is the same column so we just move it
+        Move sLoginName to sUserId
+    End_Procedure
+    
+    Procedure OnSetUserPassword String sUserId String sHashedPassword Boolean ByRef bOk
+        Handle hoUser_DD
+        Boolean bFound bErr
+        
+        Get phoUser_DD to hoUser_DD
+        
+        If (hoUser_DD = 0) Begin
+            Send MissingHandleError "phoUser_DD" "OnGetUserInfo"
+            Procedure_Return
+        End
+        
+        Send Clear of hoUser_DD
+        Move sUserId to WebAppUser.LoginName
+        Send Find of hoUser_DD EQ 1
+        
+        Move Found to bFound
+        
+        If (bFound) Begin
+            Set Field_Changed_Value Field WebAppUser.Password to sHashedPassword
+            Get Request_Validate of hoUser_DD to bErr
+            
+            If (not(bErr)) Begin
+                Send Request_Save of hoUser_DD
+                Move (Err) to bErr
+            End
+        End
+        
+        Move (bFound and not(bErr)) to bOk
+    End_Procedure
+    
+    Procedure OnGetIsUserLoggedIn Boolean ByRef bLoggedIn
+        Get IsLoggedIn of ghoWebSessionManager to bLoggedIn
+    End_Procedure
+
+    Procedure OnCreateAuthCode String ByRef sAuthCode
+        Send GenerateAuthCode (&sAuthCode)
+    End_Procedure
+    
+    Procedure OnGetConsentedScopesByClientId String sUserId String sClientId String[] ByRef asAllowedScopes
+        Handle hoUserConsent_DD
+        
+        Forward Send OnGetConsentedScopesByClientId sUserId sClientId asAllowedScopes
+        
+        Get phoUserConsent_DD to hoUserConsent_DD
+        If (hoUserConsent_DD = 0) Begin
+            Send MissingHandleError "phoUserConsent_DD" "OnGetConsentedScopesByClientId"
+            Procedure_Return
+        End
+
+        Send Clear of hoUserConsent_DD
+        Move sClientId  to OidcUserConsent.ClientId
+        Move sUserId    to OidcUserConsent.SubId
+        Send Find of hoUserConsent_DD EQ 1
+        
+        If (Found) Begin
+            Move (StrSplitToArray(OidcUserConsent.Scopes, C_OIDC_CHARACTER_SPACE)) to asAllowedScopes
+        End
+    End_Procedure
+
+    Procedure OnSetConsentedScopesByClientId String sUserId String sClientId String[] asAllowedScopes String ByRef sOptActionType
+        Handle hoUserConsent_DD
+        String sScopes sCurrentScopes
+        Boolean bHasRecord
+        
+        Forward Send OnSetConsentedScopesByClientId sUserId sClientId asAllowedScopes
+        
+        Get phoUserConsent_DD to hoUserConsent_DD
+        If (hoUserConsent_DD = 0) Begin
+            Send MissingHandleError "phoUserConsent_DD" "OnSetConsentedScopesByClientId"
+            Procedure_Return
+        End
+        
+        Move (StrJoinFromArray(asAllowedScopes, C_OIDC_CHARACTER_SPACE)) to sScopes
+        
+        Send Clear      of hoUserConsent_DD
+        Move sUserId    to OidcUserConsent.SubId
+        Move sClientId  to OidcUserConsent.ClientId
+        Send Find       of hoUserConsent_DD EQ 1
+        
+        // Add the scopes
+        Get Field_Current_Value of hoUserConsent_DD Field OidcUserConsent.Scopes to sCurrentScopes
+        Move (sCurrentScopes * sScopes) to sScopes
+        Get OidcDedupeSpaceSeparatedString sScopes to sScopes
+        
+        // Check if it's an existing record (UPDATE) or new (GRANT), only if we have the optional ByRef param
+        If (num_arguments > 3) Begin
+            Get HasRecord of hoUserConsent_DD to bHasRecord
+            If (bHasRecord) Begin
+                Move C_OIDC_CONSENT_ACTION_UPDATE to sOptActionType
+            End
+            Else Begin
+                Move C_OIDC_CONSENT_ACTION_GRANT  to sOptActionType
+            End
+        End
+        
+        Set Field_Changed_Value of hoUserConsent_DD Field OidcUserConsent.SubId     to sUserId
+        Set Field_Changed_Value of hoUserConsent_DD Field OidcUserConsent.ClientId  to sClientId
+        Set Field_Changed_Value of hoUserConsent_DD Field OidcUserConsent.Scopes    to sScopes
+        Set Field_Changed_Value of hoUserConsent_DD Field OidcUserConsent.GrantedAt to (CurrentDateTime())
+        
+        Send SaveData hoUserConsent_DD "OnSetConsentedScopesByClientId"
+    End_Procedure
+    
+    Procedure OnSaveConsentAudit tOidcConsentAudit tConsent
+        Handle hoConsent_DD
+        
+        Get phoUserConsentAudit_DD to hoConsent_DD
+        
+        If (hoConsent_DD = 0) Begin
+            Send MissingHandleError "phoUserConsentAudit_DD" "OnSaveConsentAudit"
+            Procedure_Return
+        End
+        
+        // Save it
+        Send Clear of hoConsent_DD
+        Set Field_Changed_Value of hoConsent_DD Field OidcUserConsentAudit.AuditId      to tConsent.sAuditId
+        Set Field_Changed_Value of hoConsent_DD Field OidcUserConsentAudit.Action       to tConsent.sAction
+        Set Field_Changed_Value of hoConsent_DD Field OidcUserConsentAudit.ClientId     to tConsent.sClientId
+        Set Field_Changed_Value of hoConsent_DD Field OidcUserConsentAudit.SubId        to tConsent.sSubId
+        Set Field_Changed_Value of hoConsent_DD Field OidcUserConsentAudit.Scopes       to tConsent.sScopes
+        Set Field_Changed_Value of hoConsent_DD Field OidcUserConsentAudit.PerformedAt  to tConsent.dtPerformedAt
+        Set Field_Changed_Value of hoConsent_DD Field OidcUserConsentAudit.PerformedBy  to tConsent.sPerformedBy
+        
+        Send SaveData hoConsent_DD "OnSaveConsentAudit"
+    End_Procedure
+    
+    Procedure OnResolveScopesToClaims String sUserId String sClientId String[] asRequestedScopes tNameValuePair[] ByRef atClaims
+        Forward Send OnResolveScopesToClaims sUserId sClientId asRequestedScopes (&atClaims)
+    End_Procedure
+
+    Procedure OnAuthorize String sAuthCode String sClientId String sUserId String sRedirectUri String sScope String sCodeChallenge String sCodeChallengeMethod String sOptNonce Boolean bOptScopeChanged
+        Handle hoAuthCode_DD hoClient_DD
+        
+        Get phoAuthCode_DD  to hoAuthCode_DD
+        Get phoClient_DD    to hoClient_DD
+        If (hoAuthCode_DD = 0 or hoClient_DD = 0) Begin
+            Send MissingHandleError "phoAuthCode_DD phoClient_DD" "OnAuthorize"
+            Procedure_Return
+        End
+        
+        Send Clear of hoAuthCode_DD
+        Move sClientId to OidcClient.ClientId
+        Send Find of hoClient_DD EQ 1
+        
+        If (not(Found)) Begin
+            Send OperatorError (SFormat("Client with ID '%1' doesn't exist.", sClientId)) 
+            Procedure_Return
+        End
+        
+        Set Field_Changed_Value of hoAuthCode_DD Field OidcAuthorizationCode.AuthCode               to sAuthCode
+        Set Field_Changed_Value of hoAuthCode_DD Field OidcAuthorizationCode.UserID                 to sUserId
+        Set Field_Changed_Value of hoAuthCode_DD Field OidcAuthorizationCode.RedirectURI            to sRedirectUri
+        Set Field_Changed_Value of hoAuthCode_DD Field OidcAuthorizationCode.Scope                  to sScope
+        If (num_arguments > 7) Begin
+            Set Field_Changed_Value of hoAuthCode_DD Field OidcAuthorizationCode.Nonce              to sOptNonce
+        End
+        If (num_arguments > 8) Begin
+            Set Field_Changed_Value of hoAuthCode_DD Field OidcAuthorizationCode.ScopeChanged       to bOptScopeChanged
+        End
+        Set Field_Changed_Value of hoAuthCode_DD Field OidcAuthorizationCode.CodeChallenge          to sCodeChallenge
+        Set Field_Changed_Value of hoAuthCode_DD Field OidcAuthorizationCode.CodeChallengeMethod    to sCodeChallengeMethod
+        Set Field_Changed_Value of hoAuthCode_DD Field OidcAuthorizationCode.Valid                  to True
+        Set Field_Changed_Value of hoAuthCode_DD Field OidcAuthorizationCode.CreatedAt              to (CurrentDateTime())
+        
+        Send SaveData hoAuthCode_DD "OnAuthorize"
+    End_Procedure
+
+    Procedure OnGetAuthCodeInfo String sAuthCode tOidcAuthorizationCodeInfo ByRef tCode
+        Handle hoAuthCode_DD
+        
+        Forward Send OnGetAuthCodeInfo sAuthCode (&tCode)
+        
+        Get phoAuthCode_DD to hoAuthCode_DD
+        If (hoAuthCode_DD = 0) Begin
+            Send MissingHandleError "phoAuthCode_DD" "OnGetAuthCodeInfo"
+            Procedure_Return
+        End
+        
+        Send Clear of hoAuthCode_DD
+        Move sAuthCode to OidcAuthorizationCode.AuthCode
+        Send Find of hoAuthCode_DD EQ 1
+        
+        If (Found) Begin
+            Move OidcAuthorizationCode.AuthCode             to tCode.sAuthCode
+            Move OidcAuthorizationCode.Client_id            to tCode.sClientId
+            Move OidcAuthorizationCode.Scope                to tCode.sScope
+            Move OidcAuthorizationCode.ScopeChanged         to tCode.bScopeChanged
+            Move OidcAuthorizationCode.Nonce                to tCode.sNonce
+            Move OidcAuthorizationCode.CodeChallenge        to tCode.sCodeChallenge
+            Move OidcAuthorizationCode.CodeChallengeMethod  to tCode.sCodeChallengeMethod
+            Move OidcAuthorizationCode.RedirectURI          to tCode.sRedirectURI
+            Move OidcAuthorizationCode.UserID               to tCode.sUserId
+            Move OidcAuthorizationCode.Valid                to tCode.bValid
+            Move OidcAuthorizationCode.CreatedAt            to tCode.dtCreatedAt
+        End
+    End_Procedure
+
+    Procedure OnConsumeAuthCode String sAuthCode
+        Handle hoAuthCode_DD
+        Boolean bErr
+        
+        Forward Send OnConsumeAuthCode sAuthCode
+        
+        Get phoAuthCode_DD to hoAuthCode_DD
+        
+        If (hoAuthCode_DD = 0) Begin
+            Send MissingHandleError "phoAuthCode_DD" "OnConsumeAuthCode"
+            Procedure_Return
+        End
+        
+        Send Clear of hoAuthCode_DD
+        Move sAuthCode to OidcAuthorizationCode.AuthCode
+        Send Find of hoAuthCode_DD EQ 1
+        
+        If (Found) Begin
+            Set Field_Changed_Value of hoAuthCode_DD Field OidcAuthorizationCode.Valid to 0
+            Send SaveData hoAuthCode_DD "OnConsumeAuthCode"
+        End
+    End_Procedure
+
+    Procedure OnConsumeRefreshCode String sJTI
+        Handle hoRevoked_DD
+        
+        Forward Send OnConsumeRefreshCode sJTI
+        
+        Get phoRevokedRT_DD to hoRevoked_DD
+        If (hoRevoked_DD = 0) Begin
+            Send MissingHandleError "phoRevokedRT_DD" "OnConsumeRefreshCode"
+            Procedure_Return
+        End
+        
+        Send Clear of hoRevoked_DD
+        Move sJTI to OidcRevokedRefreshToken.JTI
+        Send Find of hoRevoked_DD EQ 1
+        
+        If (Found) Begin
+            Set Field_Changed_Value of hoRevoked_DD Field OidcRevokedRefreshToken.Used to 1
+            Send SaveData hoRevoked_DD "OnConsumeRefreshCode"
+        End
+    End_Procedure
+
+    Procedure OnGetUserInfo String sUserId tOidcUserInfo ByRef tUserInfoObject
+        Handle hoUser_DD
+        
+        Forward Send OnGetUserInfo sUserId (&tUserInfoObject)
+        
+        Get phoUser_DD to hoUser_DD
+        
+        If (hoUser_DD = 0) Begin
+            Send MissingHandleError "phoUser_DD" "OnGetUserInfo"
+            Procedure_Return
+        End
+        
+        Send Clear of hoUser_DD
+        Move sUserId to WebAppUser.LoginName
+        Send Find of hoUser_DD EQ 1
+        
+        If (Found) Begin
+            Move (Trim(WebAppUser.LoginName)) to tUserInfoObject.sSubject              // The subject's identifier (sub)      
+            Move (Trim(WebAppUser.FullName))  to tUserInfoObject.sFullName             // Fullname                            
+            Move (Trim(WebAppUser.LoginName)) to tUserInfoObject.sPreferredUsername    // username
+            Move (Trim(WebAppUser.LastLogin)) to tUserInfoObject.dtLastLogin           // Last time logged in
+            // WebAppUser is very basic so all the other fields can't be filled
+            Move "" to tUserInfoObject.sGivenName                                       // first name                          
+            Move "" to tUserInfoObject.sMiddleName                                      // middle name
+            Move "" to tUserInfoObject.sFamilyName                                      // last name                           
+            Move "" to tUserInfoObject.sEmail                                           // email                               
+            Move "" to tUserInfoObject.bEmailVerified                                   // email verified?                     
+            Move "" to tUserInfoObject.sPicture                                         // url to profile picture              
+            Move "" to tUserInfoObject.sZoneInfo                                        // timezone of the user                
+            Move "" to tUserInfoObject.sLocale                                          // locale of the user                  
+            Move "" to tUserInfoObject.sProfile                                         // url to a (public) profile page                       
+            Move "" to tUserInfoObject.dtLastUpdate                                     // last time the profile was updated
+        End
+    End_Procedure
+
+    Procedure OnGetClientInfo String sClientId tOidcClient ByRef tClient
+        Handle hoClient_DD hoCallbackUrl_DD hoClientScope_DD
+        
+        Forward Send OnGetClientInfo sClientId (&tClient)
+        
+        Get phoClient_DD to hoClient_DD
+        
+        If (hoClient_DD) Begin
+            Send Clear of hoClient_DD
+            Move sClientId to OidcClient.ClientId
+            Send Find of hoClient_DD EQ 1
+            
+            If (Found) Begin
+                Move OidcClient.AccessTokenLifetime     to tClient.iAccessTokenLifetime
+                Move OidcClient.ClientBrandColor        to tClient.sClientBrandColor
+                Move OidcClient.ClientDescription       to tClient.sClientDescription
+                Move OidcClient.ClientLogoURL           to tClient.sClientLogoURL
+                Move OidcClient.ClientName              to tClient.sClientName
+                Move OidcClient.ClientId                to tClient.sClientId
+                Move OidcClient.ClientType              to tClient.sClientType
+                Move OidcClient.CreatedAt               to tClient.dtCreatedAt
+                Move OidcClient.Enabled                 to tClient.bEnabled
+                Move OidcClient.IdTokenLifetime         to tClient.iIDTokenLifetime
+                Move OidcClient.RefreshTokenLifetime    to tClient.iRefreshTokenLifetime
+            End
+            
+            // Add redirect urls
+            Get phoCallbackUrl_DD to hoCallbackUrl_DD
+            If (hoCallbackUrl_DD) Begin
+                Send Clear of hoCallbackUrl_DD
+                Send Find of hoCallbackUrl_DD FIRST_RECORD 1 // Find loop on constrained table
+                
+                While (Found)
+                    // Append to asRedirectURIs
+                    Move OidcCallbackURL.CallbackUrl to tClient.asRedirectURIs[-1]
+                    Send Find of hoCallbackUrl_DD NEXT_RECORD 1
+                Loop
+            End
+            
+            Get phoClientScope_DD to hoClientScope_DD
+            If (hoClientScope_DD) Begin
+                Send Clear of hoClientScope_DD
+                Send Find of hoClientScope_DD FIRST_RECORD 1 // Find loop on constrained table
+                
+                While (Found)
+                    // Append to asAllowedScopes
+                    Move OidcClientScope.Scope to tClient.asAllowedScopes[-1]
+                    Send Find of hoClientScope_DD NEXT_RECORD 1
+                Loop
+            End
+        End
+    End_Procedure
+    
+    Procedure OnCreateRefreshToken tOidcRefreshToken tRefreshToken
+        Handle hoRevoked_DD hoClient_DD
+        DateTime dtIat dtExp
+        
+        Forward Send OnCreateRefreshToken tRefreshToken
+        Get phoRevokedRT_DD to hoRevoked_DD
+        
+        If (hoRevoked_DD = 0) Begin
+            Send MissingHandleError "phoRevokedRT_DD" "OnCreateRefreshToken"
+            Procedure_Return
+        End
+        
+        Get phoClient_DD to hoClient_DD
+        If (hoClient_DD = 0) Begin
+            Send MissingHandleError "phoClient_DD" "OnCreateRefreshToken"
+            Procedure_Return
+        End
+        
+        Send Clear of hoRevoked_DD
+        Move tRefreshToken.sClientId to OidcClient.ClientId
+        Send Find of hoClient_DD EQ 1
+        
+        // ToDo: Log it when the client doesn't get found?
+        If (Found) Begin
+            Set Field_Changed_Value of hoRevoked_DD Field OidcRevokedRefreshToken.JTI               to tRefreshToken.sJTI
+            Set Field_Changed_Value of hoRevoked_DD Field OidcRevokedRefreshToken.SUB               to tRefreshToken.sUserId
+            Set Field_Changed_Value of hoRevoked_DD Field OidcRevokedRefreshToken.Family_ID         to tRefreshToken.sFamilyId
+            Set Field_Changed_Value of hoRevoked_DD Field OidcRevokedRefreshToken.AccessTokenJti    to tRefreshToken.sAccessJti
+            
+            // Convert epoch (unix) to datetime
+            Get UnixTimeToDateTime  tRefreshToken.ubiIat                                            to dtIat
+            Set Field_Changed_Value of hoRevoked_DD Field OidcRevokedRefreshToken.IAT               to dtIat
+            Get UnixTimeToDateTime  tRefreshToken.ubiExp                                            to dtExp
+            Set Field_Changed_Value of hoRevoked_DD Field OidcRevokedRefreshToken.EXP               to dtExp
+                                                                                                    
+            Set Field_Changed_Value of hoRevoked_DD Field OidcRevokedRefreshToken.Revoked           to tRefreshToken.bRevoked
+            Set Field_Changed_Value of hoRevoked_DD Field OidcRevokedRefreshToken.Used              to tRefreshToken.bUsed
+            Send SaveData hoRevoked_DD "OnCreateRefreshToken"
+        End
+    End_Procedure
+    
+    Procedure OnGetRefreshTokenInfo String sJTI tOidcRefreshToken ByRef tRefreshToken
+        Handle hoRevoked_DD
+        
+        Forward Send OnGetRefreshTokenInfo sJTI (&tRefreshToken)
+        
+        Get phoRevokedRT_DD to hoRevoked_DD
+        If (hoRevoked_DD = 0) Begin
+            Send MissingHandleError "phoRevokedRT_DD" "OnGetRefreshTokenInfo"
+            Procedure_Return
+        End
+        
+        Send Clear of hoRevoked_DD
+        Move sJTI to OidcRevokedRefreshToken.JTI
+        Send Find of hoRevoked_DD EQ 1
+        
+        If (Found) Begin
+            Move OidcRevokedRefreshToken.JTI        to tRefreshToken.sJTI
+            Move OidcRevokedRefreshToken.SUB        to tRefreshToken.sUserId
+            Move OidcRevokedRefreshToken.Client_id  to tRefreshToken.sClientId
+            Move OidcRevokedRefreshToken.Family_ID  to tRefreshToken.sFamilyId
+            Move OidcRevokedRefreshToken.Used       to tRefreshToken.bUsed
+            Move OidcRevokedRefreshToken.Revoked    to tRefreshToken.bRevoked
+            
+            Get DateTimeToUnixTime OidcRevokedRefreshToken.IAT to tRefreshToken.ubiIat
+            Get DateTimeToUnixTime OidcRevokedRefreshToken.EXP to tRefreshToken.ubiExp
+        End
+    End_Procedure
+    
+    Procedure OnGetRefreshTokenInfoByAccessJti String sAcessJTI tOidcRefreshToken ByRef tRefreshToken
+        Handle hoRevoked_DD
+        
+        Forward Send OnGetRefreshTokenInfoByAccessJti sAcessJTI (&tRefreshToken)
+        
+        Get phoRevokedRT_DD to hoRevoked_DD
+        If (hoRevoked_DD = 0) Begin
+            Send MissingHandleError "phoRevokedRT_DD" "OnGetRefreshTokenInfo"
+            Procedure_Return
+        End
+        
+        Send Clear of hoRevoked_DD
+        Move sAcessJTI to OidcRevokedRefreshToken.AccessTokenJti
+        Send Find of hoRevoked_DD EQ 4
+        
+        If (Found) Begin
+            Move OidcRevokedRefreshToken.JTI        to tRefreshToken.sJTI
+            Move OidcRevokedRefreshToken.SUB        to tRefreshToken.sUserId
+            Move OidcRevokedRefreshToken.Client_id  to tRefreshToken.sClientId
+            Move OidcRevokedRefreshToken.Family_ID  to tRefreshToken.sFamilyId
+            Move OidcRevokedRefreshToken.Used       to tRefreshToken.bUsed
+            Move OidcRevokedRefreshToken.Revoked    to tRefreshToken.bRevoked
+            Move sAcessJTI                          to tRefreshToken.sAccessJti
+            
+            Get DateTimeToUnixTime OidcRevokedRefreshToken.IAT to tRefreshToken.ubiIat
+            Get DateTimeToUnixTime OidcRevokedRefreshToken.EXP to tRefreshToken.ubiExp
+        End
+    End_Procedure
+
+    Procedure OnGetSupportedScopesByClient String sClientId String[] ByRef asScopes
+        Handle hoClient_DD hoClientScope_DD
+        
+        Forward Send OnGetSupportedScopesByClient sClientId (&asScopes)
+        
+        Get phoClient_DD        to hoClient_DD
+        Get phoClientScope_DD   to hoClientScope_DD
+        
+        Send Clear of hoClient_DD
+        Move sClientId to OidcClient.ClientId
+        Send Find of hoClient_DD EQ 1
+        
+        If (Found) Begin
+            Send Clear of hoClientScope_DD
+            Send Find of hoClientScope_DD FIRST_RECORD 1
+            
+            While (Found)
+                Move OidcClientScope.Scope to asScopes[-1]
+                Send Find of hoClientScope_DD NEXT_RECORD 1
+            Loop
+        End
+    End_Procedure
+
+    Procedure OnGetScopeToClaimsMap tOidcScopeClaimsMap[] ByRef atScopeClaimsMap
+        Handle hoScope_DD
+        
+        Forward Send OnGetScopeToClaimsMap (&atScopeClaimsMap)
+        
+        Get phoScope_DD to hoScope_DD
+        If (hoScope_DD) Begin
+            Send Clear of hoScope_DD
+            Send Find of hoScope_DD GE 1
+           
+            While (Found)
+                Send AddScopeClaimsMap (&atScopeClaimsMap) OidcScope.ScopeName OidcScope.Claims OidcScope.IsSystemScope OidcScope.Audience
+                Send Find of hoScope_DD GT 1
+            Loop
+        End
+    End_Procedure
+
+    Procedure OnTokenRevocation String sJTI
+        Handle hoRevoked_DD
+        
+        Forward Send OnTokenRevocation sJTI
+        
+        Get phoRevokedRT_DD to hoRevoked_DD
+        If (hoRevoked_DD = 0) Begin
+            Send MissingHandleError "phoRevokedRT_DD" "OnTokenFamilyRevocation"
+            Procedure_Return
+        End
+        
+        Send Clear of hoRevoked_DD
+        Move sJTI to OidcRevokedRefreshToken.JTI
+        Send Find of hoRevoked_DD EQ 1
+        
+        If (not(Found)) ;
+            Procedure_Return
+        
+        Set Field_Changed_Value of hoRevoked_DD Field OidcRevokedRefreshToken.Revoked to 1
+        Send SaveData hoRevoked_DD "OnTokenRevocation"
+    End_Procedure
+    
+    Procedure OnTokenFamilyRevocation String sJTI
+        Handle hoRevoked_DD
+        String sFamilyId
+        
+        Forward Send OnTokenFamilyRevocation sJTI
+        
+        Get phoRevokedRT_DD to hoRevoked_DD
+        If (hoRevoked_DD = 0) Begin
+            Send MissingHandleError "phoRevokedRT_DD" "OnTokenFamilyRevocation"
+            Procedure_Return
+        End
+        
+        Send Clear of hoRevoked_DD
+        Move sJTI to OidcRevokedRefreshToken.JTI
+        Send Find of hoRevoked_DD EQ 1
+        
+        If (not(Found)) ;
+            Procedure_Return
+            
+        Move OidcRevokedRefreshToken.Family_ID to sFamilyId
+        
+        Send Clear of hoRevoked_DD
+        Move sFamilyId to OidcRevokedRefreshToken.Family_ID
+        Send Find of hoRevoked_DD GE 2
+        
+        While (Found and OidcRevokedRefreshToken.Family_ID = sFamilyId)
+            If (OidcRevokedRefreshToken.Revoked = 0) Begin
+                Set Field_Changed_Value of hoRevoked_DD Field OidcRevokedRefreshToken.Revoked to 1
+                Send SaveData hoRevoked_DD "OnTokenFamilyRevocation"
+            End
+            
+            Send Find of hoRevoked_DD GT 2
+        Loop
+    End_Procedure
+
+    Procedure OnValidateClientSecret String sClientId String sClientSecret Boolean ByRef bShouldUpgrade Boolean ByRef bOk
+        Handle hoClient_DD hoCrypto
+        String sVersion
+        
+        If (num_arguments > 2) Forward Send OnValidateClientSecret sClientId sClientSecret (&bShouldUpgrade)
+        If (num_arguments > 3) Forward Send OnValidateClientSecret sClientId sClientSecret (&bShouldUpgrade) (&bOk)
+        
+        Get phoClient_DD    to hoClient_DD
+        Get phoCrypto       to hoCrypto
+        
+        // We can't validate if either isn't set
+        If (hoClient_DD and hoCrypto) Begin
+            Send Clear of hoClient_DD
+            Move sClientId to OidcClient.ClientId
+            Send Find of hoClient_DD EQ 1
+            
+            If (Found) Begin
+                If (not(pbSecretHashing(Self))) Begin
+                    If (num_arguments > 2) Move False to bShouldUpgrade
+                    If (num_arguments > 3) Move (OidcClient.ClientSecret = sClientSecret) to bOk
+                    Procedure_Return
+                End
+                
+                Move (Left(OidcClient.ClientSecret, 3)) to sVersion
+                If (sVersion = "V1$") Begin
+                    If (num_arguments > 2) Move False to bShouldUpgrade
+                    If (num_arguments > 3) Move (VerifyPasswordHash(hoCrypto, sClientSecret, Right(OidcClient.ClientSecret, Length(OidcClient.ClientSecret) - 3))) to bOk
+                    Procedure_Return
+                End
+                Else Begin
+                    If (num_arguments > 2) Move True  to bShouldUpgrade
+                    If (num_arguments > 3) Move False to bOk
+                    Procedure_Return
+                End
+            End
+        End
+    End_Procedure
+    
+    Procedure OnGetApplicationBaseUrl String ByRef sBaseUrl
+        // Check if we don't already have it (in case of a forward send)
+        If (SizeOfString(sBaseUrl) = 0) Begin
+            Get psApplicationBaseUrl to sBaseUrl
+        
+            If (SizeOfString(sBaseUrl) = 0) Begin
+                Send ProgramError "Missing application base URL."
+                Procedure_Return
+            End
+        End
+    End_Procedure
+
+    Procedure OnGetScopeSummaryDetail String sScope String  ByRef sSummary String  ByRef sDetail
+        Handle hoScope_DD
+        Forward Send OnGetScopeSummaryDetail sScope (&sSummary) (&sDetail)
+        
+        Get phoScope_DD to hoScope_DD
+        Send Clear of hoScope_DD
+        Move sScope to OidcScope.ScopeName
+        Send Find of hoScope_DD EQ 1
+        
+        If (Found) Begin
+            Move OidcScope.DisplayName to sSummary
+            Move OidcScope.Description to sDetail
+        End
+    End_Procedure
+    
+    Function CreateSecretHash String sClientSecret String ByRef sHash Returns Boolean
+        Handle hoCrypto
+        
+        Get phoCrypto to hoCrypto
+        If (hoCrypto = 0) Begin
+            Error DFERR_PROGRAM "phoCrypto contains an invalid value for OnCreateSecretHash in cOidcProviderStandard.pkg"
+            Function_Return False
+        End
+        
+        If (not(pbSecretHashing(Self))) Begin
+            Move sClientSecret to sHash
+            Function_Return True
+        End
+        
+        If (not(CreatePasswordHash(hoCrypto, sClientSecret, &sHash))) Begin
+            Function_Return False
+        End
+        Move ("V1$" + sHash) to sHash
+        Function_Return True
+    End_Function
+    
+    { Visibility=Private }
+    Procedure GenerateAuthCode String ByRef sCode
+        Handle hoCrypto
+        Integer iLength
+        
+        Get Create (RefClass(cCryptographerEx)) to hoCrypto
+        // Number of random bytes (e.g., 32 bytes = 256 bits)
+        Get piAuthCodeLength to iLength
+        
+        //  Generate a random key (slightly too long)
+        Get GenerateRandomString of hoCrypto (iLength + 10) to sCode
+        
+        // Trim to exact length
+        Move (Left(sCode, iLength)) to sCode
+        
+        // Base64 Url-encode
+        Send OidcBase64ToBase64Url (&sCode)
+    End_Procedure
+
+    Procedure OnGetSystemAudience String ByRef sSystemAudience
+        // Standard implementation uses the base url
+        Send OnGetApplicationBaseUrl (&sSystemAudience)
+    End_Procedure
+    
+    // Event that gets fired for each request, can be used to log
+    Procedure OnSaveRequestAudit tOidcRequest tRequest
+        Handle hoAudit_DD
+        
+        Get phoRequestAudit_DD to hoAudit_DD
+        If (hoAudit_DD = 0) Begin
+            Send MissingHandleError "phoRequestAudit_DD" "OnSaveRequestAudit"
+            Procedure_Return
+        End                       
+        
+        Send Clear of hoAudit_DD
+        
+        Set Field_Changed_Value of hoAudit_DD Field OidcRequestAudit.HttpMethod     to tRequest.sHttpMethod
+        Set Field_Changed_Value of hoAudit_DD Field OidcRequestAudit.Endpoint       to tRequest.sEndpoint
+        Set Field_Changed_Value of hoAudit_DD Field OidcRequestAudit.ClientId       to tRequest.sClientId
+        Set Field_Changed_Value of hoAudit_DD Field OidcRequestAudit.SubId          to tRequest.sSubjectId
+        Set Field_Changed_Value of hoAudit_DD Field OidcRequestAudit.IPAddress      to tRequest.sIpAddress
+        Set Field_Changed_Value of hoAudit_DD Field OidcRequestAudit.RequestData    to tRequest.sRequestData
+        Set Field_Changed_Value of hoAudit_DD Field OidcRequestAudit.ResponseStatus to tRequest.sResponseStatus
+        Set Field_Changed_Value of hoAudit_DD Field OidcRequestAudit.Scope          to tRequest.sScope
+        Set Field_Changed_Value of hoAudit_DD Field OidcRequestAudit.Timestamp      to tRequest.dtTimestamp
+        
+        // Save error if there was one
+        If (SizeOfString(tRequest.sErrorCode) > 0) Begin
+            Set Field_Changed_Value of hoAudit_DD Field OidcRequestAudit.ErrorCode to tRequest.sErrorCode
+        End
+        
+        If (SizeOfString(tRequest.sErrorMessage) > 0) Begin
+            Set Field_Changed_Value of hoAudit_DD Field OidcRequestAudit.ErrorMessage to tRequest.sErrorMessage
+        End
+        
+        Send SaveData hoAudit_DD "OnSaveRequestAudit"
+    End_Procedure
+
+    Procedure OnGetDefaultClientScopes String sClientId String[] ByRef asScopes
+        // By default return all scopes
+        Send OnGetSupportedScopesByClient sClientId (&asScopes)
+    End_Procedure
+
+    Procedure OnGetUserAuthorizedScopes String sUserId String sClientId String[] ByRef asScopes
+        Handle hoRole_DD hoScope_DD hoUserRole_DD hoRoleScopes_DD
+        
+        Get phoRole_DD to hoRole_DD
+        If (hoRole_DD = 0) Begin
+            Send MissingHandleError "phoRole_DD" "OnGetUserAuthorizedScopes"
+            Procedure_Return
+        End
+        
+        Get phoScope_DD to hoScope_DD
+        If (hoScope_DD = 0) Begin
+            Send MissingHandleError "phoScope_DD" "OnGetUserAuthorizedScopes"
+            Procedure_Return
+        End
+        
+        Get phoUserRole_DD to hoUserRole_DD
+        If (hoUserRole_DD = 0) Begin
+            Send MissingHandleError "phoUserRole_DD" "OnGetUserAuthorizedScopes"
+            Procedure_Return
+        End
+        
+        Get phoRoleScopes_DD to hoRoleScopes_DD
+        If (hoRoleScopes_DD = 0) Begin
+            Send MissingHandleError "phoRoleScopes_DD" "OnGetUserAuthorizedScopes"
+            Procedure_Return
+        End
+        
+        // Default scopes first
+        Send Clear of hoRole_DD
+        Move True to OidcRole.IsDefault
+        Send Find of hoRole_DD GE 3 // Index 3 (IsDefault, RoleId)
+        
+        While (Found and OidcRole.IsDefault = 1)
+            // Add all scopes if it belongs to this client or is global (empty clientId)
+            If (OidcRole.ClientId = "" or OidcRole.ClientId = sClientId) Begin
+                Send Clear of hoRoleScopes_DD // Clears scope_dd and is constrained to role_dd
+                Send Find of hoRoleScopes_DD FIRST_RECORD 1
+                
+                While (Found)
+                    Move OidcScope.ScopeName to asScopes[-1] // OidcScope is filled because of the relation with OidcRoleScopes
+                    Send Find of hoRoleScopes_DD NEXT_RECORD 1
+                Loop 
+            End
+            
+            Send Find of hoRole_DD GT 3 // Find next default role
+        Loop
+        
+        // User allowed scopes
+        Send Clear of hoUserRole_DD
+        Move sUserId to OidcUserRole.SubId
+        Send Find of hoUserRole_DD GE 1
+        
+        While (Found and OidcUserRole.SubId = sUserId)
+            // Only add when its the same clientId or global (empty clientId)
+            If (OidcRole.ClientId = "" or OidcRole.ClientId = sClientId) Begin
+                // UserRole fills Role which in turn fills Scope
+                Send Clear of hoRoleScopes_DD // Clears scope_dd and is constrained to role_dd
+                Send Find of hoRoleScopes_DD FIRST_RECORD 1
+                
+                While (Found)
+                    Move OidcRoleScopes.Scope to asScopes[-1]
+                    Send Find of hoRoleScopes_DD NEXT_RECORD 1
+                Loop
+            End
+            
+            Send Find of hoUserRole_DD GT 1
+        Loop
+        
+        // Dedupe array
+        Get OidcDedupeStringArray asScopes to asScopes
+    End_Procedure
+    
+    
+End_Class

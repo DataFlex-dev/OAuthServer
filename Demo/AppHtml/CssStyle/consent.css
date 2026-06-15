@@ -1,0 +1,172 @@
+:root {
+  --default-color: #f55d06;
+  --brand-color: var(--default-color);
+
+  --panel-bg: #ffffff;
+  --panel-border: #e6e9ee;
+  --accent: #2563eb; /* caret + summary hover */
+
+  /* Basic fallback for old browsers */
+  --accent: 333333; /* dark grey fallback */
+
+  /* Modern browsers: darken brand color dynamically */
+  --accent: color-mix(in srgb, var(--brand-color, #f55d06) 70%, black 30%);
+
+  --radius: 12px;
+  --gap: 8px;
+  --pad: 14px;
+  --shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+
+  --df-BtnBackgroundColor: var(--brand-color);
+  --df-BtnFocusColor: #333333; /* dark grey fallback */
+  --df-BtnFocusColor: color-mix(in srgb, var(--brand-color) 70%, black 30%);
+}
+
+.WebHtmlBox .WebHtml_Wrp a.text-button {
+  color: var(--brand-color, --default-color);
+}
+
+.content-container {
+  max-width: 800px;
+  margin: 0 auto;
+  background-color: white;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+}
+
+details[open] {
+  padding: 0.5em;
+}
+
+details[open] summary {
+  border-bottom: 1px solid #aaaaaa;
+  margin-bottom: 0.5em;
+}
+
+.error-title {
+  font-size: 2rem;
+  font-weight: bold;
+}
+
+.error-description {
+  font-family: Arial, sans-serif;
+}
+
+.font-weight-bold {
+  font-weight: bold;
+}
+
+.flex-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  gap: 12px;
+}
+
+p {
+  color: #333;
+  line-height: 1.6;
+  margin-bottom: 20px;
+  font-size: 1.1em;
+}
+
+summary {
+  font-weight: bold;
+  margin: -0.5em -0.5em 0;
+  padding: 0.5em;
+}
+
+.text-align-center {
+  text-align: center;
+}
+
+.WebControl.WebLabel.application-title .WebCon_Inner .WebLabel_content {
+  font-size: 1rem;
+  font-weight: bold;
+  padding: 8px 0px;
+}
+
+.WebControl.WebLabel.client-title .WebCon_Inner .WebLabel_content {
+  font-size: 2rem;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.WebControl.WebLabel.error-title .WebCon_Inner .WebLabel_content {
+  line-height: 2.5rem;
+}
+
+/* Outer container */
+.WebControl.WebHtmlBox.scope-list .WebCon_Inner .WebHtml_Wrp {
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: calc(var(--gap) + 4px);
+  box-shadow: var(--shadow);
+  margin: 24px auto;
+  max-width: 760px;
+}
+
+/* Every detail block */
+.WebControl.WebHtmlBox.scope-list .WebCon_Inner .WebHtml_Wrp details {
+  background: var(--panel-bg);
+  border-radius: 10px;
+  margin: var(--gap) 0;
+  overflow: hidden;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+  /* subtle divide line at bottom; last-child will not have it */
+  border: 1px solid transparent;
+}
+
+.WebControl.WebHtmlBox.scope-list
+  .WebCon_Inner
+  .WebHtml_Wrp
+  details:not(:last-child) {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+/* Summary layout */
+.WebControl.WebHtmlBox.scope-list .WebCon_Inner .WebHtml_Wrp summary {
+  padding: var(--pad);
+  cursor: pointer;
+  list-style: none;
+  position: relative;
+  font-weight: 600;
+  color: var(--brand-color);
+  user-select: none;
+  display: flex;
+  align-items: center;
+}
+
+/* Summary hover */
+.WebControl.WebHtmlBox.scope-list .WebCon_Inner .WebHtml_Wrp summary:hover {
+  color: var(--accent);
+}
+
+/* Remove default marker */
+summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Caret using ::after */
+.WebControl.WebHtmlBox.scope-list .WebCon_Inner .WebHtml_Wrp summary::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+  transform: rotate(45deg);
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease;
+  margin-left: auto;
+}
+
+/* Rotate caret when open */
+.WebControl.WebHtmlBox.scope-list .WebCon_Inner .WebHtml_Wrp details[open] summary::after {
+  transform: rotate(225deg); /* points down */
+  border-right-color: var(--accent);
+  border-bottom-color: var(--accent);
+}

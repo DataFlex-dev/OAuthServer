@@ -1,0 +1,60 @@
+// Token types
+Enum_List
+    Define C_OIDC_TOKEN_ID_TOKEN
+    Define C_OIDC_TOKEN_ACCESS_TOKEN
+    Define C_OIDC_TOKEN_REFRESH_TOKEN
+End_Enum_List
+
+// claims - openid scope
+Define C_OIDC_CLAIM_SUBJECT         for "sub"
+Define C_OIDC_CLAIM_ISSUER          for "iss"
+Define C_OIDC_CLAIM_AUDIENCE        for "aud"
+Define C_OIDC_CLAIM_EXPIRY          for "exp"
+Define C_OIDC_CLAIM_ISSUED_AT       for "iat"
+Define C_OIDC_CLAIM_NONCE           for "nonce"
+Define C_OIDC_CLAIM_AUTH_TIME       for "auth_time"
+// optional but recommended
+Define C_OIDC_CLAIM_NOT_BEFORE      for "nbf"
+Define C_OIDC_CLAIM_ACR             for "acr"
+Define C_OIDC_CLAIM_AMR             for "amr"
+Define C_OIDC_CLAIM_AZP             for "azp"
+
+// claims - profile scope
+Define C_OIDC_CLAIM_NAME            for "name"
+Define C_OIDC_CLAIM_GIVEN_NAME      for "given_name"
+Define C_OIDC_CLAIM_FAMILY_NAME     for "family_name"
+Define C_OIDC_CLAIM_MIDDLE_NAME     for "middle_name"
+Define C_OIDC_CLAIM_NICKNAME        for "nickname"
+Define C_OIDC_CLAIM_PREF_USERNAME   for "preferred_username"
+Define C_OIDC_CLAIM_PROFILE         for "profile"
+Define C_OIDC_CLAIM_PICTURE         for "picture"
+Define C_OIDC_CLAIM_WEBSITE         for "website"
+Define C_OIDC_CLAIM_GENDER          for "gender"
+Define C_OIDC_CLAIM_BIRTHDATE       for "birthdate"
+Define C_OIDC_CLAIM_ZONEINFO        for "zoneinfo"
+Define C_OIDC_CLAIM_LOCALE          for "locale"
+Define C_OIDC_CLAIM_UPDATED_AT      for "updated_at"
+
+// claims - email scope
+Define C_OIDC_CLAIM_EMAIL           for "email"
+Define C_OIDC_CLAIM_EMAIL_VERIFIED  for "email_verified"
+
+// claims - phone scope
+Define C_OIDC_CLAIM_PHONE_NUMBER    for "phone_number"
+Define C_OIDC_CLAIM_PHONE_VERIFIED  for "phone_number_verified"
+
+// claims - address scope
+Define C_OIDC_CLAIM_ADDRESS         for "address"
+
+// claims - access token
+Define C_OIDC_CLAIM_SCOPE           for "scope"
+
+// claims - refresh token
+Define C_OIDC_CLAIM_JTI             for "jti"
+
+// claims - client_id
+Define C_OIDC_CLAIM_CLIENT_ID       for "client_id"
+Define C_OIDC_CLAIM_USERNAME        for "username"
+
+// Custom claims
+Define C_OIDC_CUSTOM_CLAIM_SESSION_KEY for "sk" // Used by the cOidcSessionManager

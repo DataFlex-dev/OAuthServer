@@ -1,0 +1,26 @@
+{
+    "dependencies": {
+        "DataFlex-dev/JsonWebToken": {
+            "ref": "1.0.0"
+        },
+        "DataFlex-dev/OAuth Server Lib": {
+            "ref": "1.1.0"
+        },
+        "DataFlex-dev/Security (Libsodium)": {
+            "ref": "1.0.0"
+        },
+        "DataFlex-dev/Security (core)": {
+            "ref": "1.0.0"
+        },
+        "DataFlex-dev/Web UI": {
+            "ref": "1.0.46"
+        },
+        "DataFlex-dev/Web UI Material Theme": {
+            "ref": "1.0.3"
+        },
+        "DataFlex-dev/Web UI Server": {
+            "ref": "1.0.46"
+        }
+    },
+    "lockVersion": "1.0.0"
+}

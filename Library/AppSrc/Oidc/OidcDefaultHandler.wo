@@ -1,0 +1,15 @@
+Use Oidc\cOidcHandler.pkg
+Use Oidc\OidcDefaultProvider.wo
+
+Object oOidcDefaultHandler is a cOidcHandler
+    Set phoOidcProvider to oOidcDefaultProvider
+    
+    Set phoLoginView to (GetLoginView(ghoWebApp))
+    Set phoOidcProvider of (GetLoginView(ghoWebApp)) to oOidcDefaultProvider
+    
+    Set phoOidcConsentView to (phoOidcConsentView(ghoWebApp))
+    Set phoOidcProvider of (phoOidcConsentView(ghoWebApp)) to oOidcDefaultProvider
+    If ((phoOidcConsentView(ghoWebApp)) <> C_WebUnresolvedObject) Begin
+        Send RegisterNavigateForwardPath ntNavigateBegin (phoOidcConsentView(ghoWebApp)) ghoWebApp ""
+    End
+End_Object

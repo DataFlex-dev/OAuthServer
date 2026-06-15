@@ -1,0 +1,11 @@
+#REPLACE FILE6 OidcRevokedRefreshToken
+#REPLACE OidcRevokedRefreshToken.File_Number |CI6
+#REPLACE OidcRevokedRefreshToken.JTI |FS6,1
+#REPLACE OidcRevokedRefreshToken.Family_ID |FS6,2
+#REPLACE OidcRevokedRefreshToken.SUB |FS6,3
+#REPLACE OidcRevokedRefreshToken.Client_id |FS6,4
+#REPLACE OidcRevokedRefreshToken.IAT |FM6,5
+#REPLACE OidcRevokedRefreshToken.EXP |FM6,6
+#REPLACE OidcRevokedRefreshToken.Used |FN6,7
+#REPLACE OidcRevokedRefreshToken.Revoked |FN6,8
+#REPLACE OidcRevokedRefreshToken.AccessTokenJti |FS6,9

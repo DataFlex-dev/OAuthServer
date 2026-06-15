@@ -1,0 +1,32 @@
+// All constants used for OIDC/OAuth 2.0 responses
+Define C_OIDC_RESPONSE_STATUS_FOUND                             for 302
+Define C_OIDC_RESPONSE_REASON_FOUND                             for "Found"
+Define C_OIDC_RESPONSE_STATUS_BAD_REQUEST                       for 400
+Define C_OIDC_RESPONSE_REASON_BAD_REQUEST                       for "Bad Request"
+Define C_OIDC_RESPONSE_STATUS_UNAUTHORIZED                      for 401
+Define C_OIDC_RESPONSE_REASON_UNAUTHORIZED                      for "Unauthorized"
+Define C_OIDC_RESPONSE_STATUS_FORBIDDEN                         for 403
+Define C_OIDC_RESPONSE_REASON_FORBIDDEN                         for "Forbidden"
+Define C_OIDC_RESPONSE_STATUS_NOT_FOUND                         for 404
+Define C_OIDC_RESPONSE_REASON_NOT_FOUND                         for "Not Found"
+Define C_OIDC_RESPONSE_STATUS_METHOD_NOT_ALLOWED                for 405
+Define C_OIDC_RESPONSE_REASON_METHOD_NOT_ALLOWED                for "Method Not Allowed"
+Define C_OIDC_RESPONSE_STATUS_UNSUPPORTED_MEDIA_TYPE            for 415
+Define C_OIDC_RESPONSE_REASON_UNSUPPORTED_MEDIA_TYPE            for "Unsupported Media Type"
+Define C_OIDC_RESPONSE_STATUS_INTERNAL_SERVER_ERROR             for 500
+Define C_OIDC_RESPONSE_REASON_INTERNAL_SERVER_ERROR             for "Internal Server Error"
+
+// HTTP Headers
+Define C_OIDC_HTTP_HEADER_CONTENT_TYPE                          for "Content-Type"
+Define C_OIDC_CONTENT_TYPE_APPLICATION_JSON                     for "application/json"
+Define C_OIDC_CONTENT_TYPE_APPLICATION_X_WWW_FORM_URL_ENCODED   for "application/x-www-form-urlencoded"
+Define C_OIDC_CONTENT_TYPE_TEXT_HTML                            for "text/html"
+Define C_OIDC_HTTP_HEADER_CACHE_CONTROL                         for "Cache-Control"
+Define C_OIDC_CACHE_CONTROL_NO_STORE                            for "no-store"
+Define C_OIDC_HTTP_HEADER_PRAGMA                                for "Pragma"
+Define C_OIDC_PRAGMA_NO_CACHE                                   for "no-cache"
+Define C_OIDC_HTTP_HEADER_ALLOW                                 for "Allow"
+Define C_OIDC_HTTP_HEADER_WWW_AUTHENTICATE                      for "WWW-Authenticate"
+Define C_OIDC_HTTP_HEADER_VALUE_WWW_AUTH_BASIC                  for 'Basic realm="OAuth2", error="invalid_client"'
+Define C_OIDC_HTTP_HEADER_VALUE_WWW_AUTH_BEARER                 for 'Bearer realm="OAuth2", error="invalid_token", error_description="%1"'
+Define C_OIDC_HTTP_HEADER_VALUE_WWW_AUTH_BEARER_CUSTOM          for 'Bearer realm="OAuth2", error="%1", error_description="%2"'

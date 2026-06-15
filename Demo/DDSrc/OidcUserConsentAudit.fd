@@ -1,0 +1,9 @@
+#REPLACE FILE8 OidcUserConsentAudit
+#REPLACE OidcUserConsentAudit.File_Number |CI8
+#REPLACE OidcUserConsentAudit.AuditId |FN8,1
+#REPLACE OidcUserConsentAudit.ClientId |FS8,2
+#REPLACE OidcUserConsentAudit.SubId |FS8,3
+#REPLACE OidcUserConsentAudit.Scopes |FS8,4
+#REPLACE OidcUserConsentAudit.Action |FS8,5
+#REPLACE OidcUserConsentAudit.PerformedAt |FM8,6
+#REPLACE OidcUserConsentAudit.PerformedBy |FS8,7

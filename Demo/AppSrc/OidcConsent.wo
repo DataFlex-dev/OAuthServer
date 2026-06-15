@@ -1,0 +1,364 @@
+﻿Use cWebView.pkg
+Use Oidc\Constants\OidcErrorConstants.pkg
+Use Oidc\Constants\OidcParameterConstants.pkg
+Use Oidc\Structs\tOidcClient.pkg
+Use oidc\Structs\tOidcUserInfo.pkg
+
+Define C_OIDC_CONSENT_ALLOW_STRING for "Allow %1 to connect to:"
+Define C_OIDC_CONSENT_AGREE_STRING for "You agree that %1 will be able to:"
+
+Object oOidcConsent is a cWebView
+    Property Handle phoOidcProvider 0
+    
+    Set piMinWidth to 250
+    Set piMaxWidth to 420
+    Set piColumnCount to 12
+    Set pbStateReplace to True  // Always replace the state so the consent view never becomes its own history item
+    Set peViewType to vtUndefined
+    
+    Set psStateViewName to "OidcConsent"
+    
+    { WebProperty=Server }
+    Property String psContinueUrl
+    
+    { WebProperty=Client }
+    Property String psClientId
+    
+    { WebProperty=Server }
+    Property String[] pasScopes
+    
+    { WebProperty=Server }
+    Property String psClientRedirectUrl
+    
+    { WebProperty=Server }
+    Property String psState
+    
+    { WebProperty=Server }
+    Property String psResponseMode
+    
+    Delegate Set phoOidcConsentView to Self
+    
+    Object oCss is a cWebHtmlBox
+        Set psHtml to """<link href="CssStyle/consent.css" rel="stylesheet" type="text/css" />"""
+    End_Object
+    
+    Object oConsentWebGroup is a cWebGroup
+        Set pbShowCaption to False
+        Set pbShowBorder to False
+        Set psCSSClass to "content-container flex-center"
+        
+        Object oTopSpacer is a cWebSpacer
+            Set piHeight to 16
+        End_Object
+        
+        Object oServerTitle is a cWebLabel
+            Set psCSSClass to "application-title text-align-center"
+            Set psCaption to C_OIDC_CONSENT_ALLOW_STRING
+        End_Object
+        
+        Object oClientTitle is a cWebLabel
+            Set psCSSClass to "client-title text-align-center"
+            Set psCaption to "Unknown"
+        End_Object
+        
+        Object oAccountName is a cWebLabel
+            Set psCSSClass to "text-align-center"
+            Set psCaption to "Unknown account"
+        End_Object
+        
+        Object oNotYouTextButton is a cWebHtmlBox
+            Set psCSSClass to "flex-center"
+            Set psHtml to "<a class='text-button' data-ServerOnClick='not-me'>Not you?</a>"
+            Set piColumnIndex to 0
+            Set pbServerOnClick to True
+            
+            Procedure OnClick String sId String sParam
+                If (sId = "not-me") Begin
+                    Send RequestLogout of ghoWebSessionManager
+                End
+            End_Procedure
+        End_Object
+        
+        Object oAgreeText is a cWebLabel
+            Set psCSSClass to "font-weight-bold"
+            Set psCaption to C_OIDC_CONSENT_AGREE_STRING
+        End_Object
+        
+        Object oScopeListHtml is a cWebHtmlBox
+            Set psCSSClass to "scope-list"
+        End_Object
+        
+        Object oScopeButtonSpacer is a cWebSpacer
+            Set piHeight to 16
+        End_Object
+        
+        Object oAgreeButton is a cWebButton
+            Set psCSSClass to "agree-button"
+            Set psCaption to "Agree"
+            
+            Procedure OnClick
+                Handle hoOidcProvider
+                String sClientId sUserId sContinue
+                String[] asScopes
+                
+                Get phoOidcProvider to hoOidcProvider
+                If (hoOidcProvider = 0) Begin
+                   Send ShowError C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR 
+                   Procedure_Return
+                End
+                
+                // Create consent record for current ClientId
+                WebGet psClientId of oOidcConsent to sClientId
+                WebGet pasScopes of oOidcConsent to asScopes 
+                
+                Send OnGetUserId of hoOidcProvider (&sUserId)
+                If (SizeOfString(sUserId) = 0) Begin
+                    Send ShowError C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR 
+                    Procedure_Return
+                End
+                
+                Send OnSetConsentedScopesByClientId of hoOidcProvider sUserId sClientId asScopes
+                
+                WebGet psContinueUrl of oOidcConsent to sContinue
+                If (SizeOfString(sContinue) > 0) Begin
+                    Send NavigateToPage sContinue btCurrentWindow
+                End
+                Else Begin
+                    Send ShowError C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST
+                    Procedure_Return
+                End
+            End_Procedure
+        End_Object
+        
+        Object oCancelButton is a cWebButton
+            Set psCSSClass to "cancel-button"
+            Set psCaption to "Cancel"
+            
+            Procedure OnClick
+                Handle hoOidcProvider
+                String sClientId sRedirectUrl sState sResponseMode
+                
+                Get phoOidcProvider to hoOidcProvider
+                If (hoOidcProvider = 0) Begin
+                    // ToDo: Log it
+                    Send ShowError C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR
+                    Procedure_Return
+                End
+
+                // Access denied error redirect to client
+                WebGet psClientRedirectUrl  of oOidcConsent to sRedirectUrl
+                WebGet psState              of oOidcConsent to sState
+                WebGet psResponseMode       of oOidcConsent to sResponseMode
+                
+                If (SizeOfString(sRedirectUrl) > 0) Begin
+                    Get CreateErrorRedirectUri of hoOidcProvider sRedirectUrl C_OIDC_ERR_ACCESS_DENIED C_OIDC_ERR_DESC_ACCESS_DENIED sState sResponseMode to sRedirectUrl
+                    Send NavigateToPage sRedirectUrl btCurrentWindow
+                    Procedure_Return
+                End
+                Else Begin
+                    Send ShowError C_OIDC_ERR_ACCESS_DENIED C_OIDC_ERR_DESC_ACCESS_DENIED
+                    Procedure_Return
+                End
+            End_Procedure
+        End_Object
+        
+        Object oBottomSpacer is a cWebSpacer
+            Set piHeight to 24
+        End_Object
+    End_Object
+    
+    Object oErrorWebGroup is a cWebGroup
+        Set pbShowCaption to False
+        Set pbShowBorder to False
+        Set pbRender to False
+        Set psCSSClass to "content-container flex-center"
+        
+        Object oErrorTitle is a cWebLabel
+            Set psCSSClass to "error-title"
+            Set psCaption to "Something went wrong"
+        End_Object
+        
+        Object oErrorDescription is a cWebHtmlBox
+            Set psHtml to "<p>description...</p>"
+        End_Object
+    End_Object
+    
+    Procedure FillScopeListHtml String[] asScopes
+        String sApplicationTitle sSummary sDetail
+        Integer iSize iIndex
+        Handle hoOidcProvider
+        
+        Get psApplicationTitle of ghoWebApp to sApplicationTitle
+        
+        Move (SizeOfArray(asScopes)) to iSize
+        Get phoOidcProvider to hoOidcProvider
+        
+        For iIndex from 0 to (iSize - 1)
+            If (hoOidcProvider) Begin
+                Send OnGetScopeSummaryDetail of hoOidcProvider asScopes[iIndex] (&sSummary) (&sDetail)
+            End
+            Else Begin
+                Move asScopes[iIndex] to sSummary
+                Move (SFormat("%1 details from %2", asScopes[iIndex], sApplicationTitle)) to sDetail
+            End
+            
+            Get HtmlEncode sSummary to sSummary
+            Get HtmlEncode sDetail  to sDetail
+            
+            Send AppendHtml of oScopeListHtml ;
+                (SFormat("<details><summary>%1</summary>%2</details>", sSummary, sDetail))
+        Loop
+    End_Procedure
+
+    Procedure OnBeforeShow
+        tOidcClient tClient
+        String sCRLF sContinue sClientId
+        String sApplicationTitle sUserId sSubjectName
+        String sScopes sCss sRedirectUrl sState sResponseMode
+        Handle hoOidcProvider
+        tOidcUserInfo tUserInfo
+        String[] asScopes asConsentedScopes asUnconsentedScopes asAllowedScopes
+        Boolean bOk bIsHexColor bLeadingHashtag bRootExists
+                
+        Move (Character(13)+Character(10)) to sCRLF
+        Send HideHeader to (Host(Self))
+        Send ResetState
+        
+        Get psApplicationTitle to sApplicationTitle
+        WebSet psCaption of oServerTitle to (SFormat(C_OIDC_CONSENT_ALLOW_STRING, sApplicationTitle))
+        
+        Get phoOidcProvider to hoOidcProvider
+        
+        If (hoOidcProvider = 0) Begin
+            // Set some error
+            Send ShowError C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR
+            Procedure_Return
+        End
+        
+        // The handler's ConsentRedirect builds this with ContinueUrl C_OIDC_CONTINUE_URL_CONSENT.
+        // Only accept it if it points back to our authorize endpoint.
+        Get UrlParameter C_OIDC_PARAM_CONTINUE to sContinue
+        If (SizeOfString(sContinue) = 0) Begin
+            Procedure_Return
+        End
+
+        Get NormalizeAuthorizeContinueUrl of hoOidcProvider sContinue C_OIDC_PROMPT_CONSENT (&bOk) to sContinue
+        If (not(bOk)) Begin
+            Procedure_Return // We set no continue url and continue
+        End
+        WebSet psContinueUrl to sContinue
+
+        // Get user info
+        Send OnGetUserId of hoOidcProvider (&sUserId)
+        Send OnGetUserInfo of hoOidcProvider sUserId (&tUserInfo)
+        Send OnGetSubjectName of hoOidcProvider tUserInfo (&sSubjectName)
+        WebSet psCaption of oAccountName to (Trim(sSubjectName))
+
+        // Get state and response mode
+        Get OidcParameterFromUrl sContinue C_OIDC_PARAM_STATE to sState
+        WebSet psState of oOidcConsent to sState
+
+        // Response mode only determines whether error redirects use query or fragment.
+        Get OidcParameterFromUrl sContinue C_OIDC_PARAM_RESPONSE_MODE to sResponseMode
+        WebSet psResponseMode of oOidcConsent to sResponseMode
+
+        // Get ClientId from continue url
+        Get OidcParameterFromUrl sContinue C_OIDC_PARAM_CLIENT_ID to sClientId
+        If (SizeOfString(sClientId) = 0) Begin
+            Send ShowError C_OIDC_ERR_UNAUTHORIZED_CLIENT C_OIDC_ERR_DESC_UNAUTHORIZED_CLIENT
+            Procedure_Return
+        End
+
+        // Get scopes from the continue url
+        Get OidcParameterFromUrl sContinue C_OIDC_PARAM_SCOPE to sScopes
+        If (SizeOfString(sScopes) > 0) Begin
+            Move (StrSplitToArray(sScopes, C_OIDC_CHARACTER_SPACE)) to asScopes
+
+            // Intersect with client allowed scopes
+            Send OnGetSupportedScopesByClient of hoOidcProvider sClientId (&asAllowedScopes)
+            Get OidcIntersectStringArray asScopes asAllowedScopes to asScopes
+
+            // Intersect with user allowed scopes
+            Send OnGetUserAuthorizedScopes of hoOidcProvider sUserId sClientId (&asAllowedScopes)
+            Get OidcIntersectStringArray asScopes asAllowedScopes to asScopes
+
+            WebSet pasScopes to asScopes
+            WebSet psClientId to sClientId
+            
+            If (SizeOfArray(asScopes) = 0) Begin
+                Send ShowError C_OIDC_ERR_INVALID_SCOPE C_OIDC_ERR_DESC_INVALID_SCOPE
+            End
+
+            // Only show scopes that haven't explicitly gotten consent already
+            Send OnGetConsentedScopesByClientId of hoOidcProvider sUserId sClientId (&asConsentedScopes)
+            Get OidcRemoveStringArraySubset asScopes asConsentedScopes to asUnconsentedScopes
+
+            // If all scopes have been consented to before we show them all (prompt must have contained 'consent' so we shall show them)
+            If (SizeOfArray(asUnconsentedScopes) = 0) Begin
+                Send FillScopeListHtml asScopes
+            End
+            Else Begin
+                Send FillScopeListHtml asUnconsentedScopes
+            End
+        End
+    
+        Send OnGetClientInfo of hoOidcProvider sClientId (&tClient)
+
+        // Replace agree text
+        WebSet psCaption of oClientTitle to tClient.sClientName
+        WebSet psCaption of oAgreeText to (SFormat(C_OIDC_CONSENT_AGREE_STRING, tClient.sClientName))
+
+        // Get Redirect url from the continue url
+        Get OidcParameterFromUrl sContinue C_OIDC_PARAM_REDIRECT_URI to sRedirectUrl
+        Get ValidateRedirectUri of hoOidcProvider tClient sRedirectUrl to bOk
+        If (bOk) Begin
+            WebSet psClientRedirectUrl of oOidcConsent to sRedirectUrl
+        End
+
+        // Branding
+        WebGet psHtml of oCss to sCss
+
+        Get OidcIsHexColor tClient.sClientBrandColor (&bLeadingHashtag) to bIsHexColor
+
+        If (bIsHexColor) Begin
+            Move (Pos(":root {", sCss)) to bRootExists
+            
+            If (not(bRootExists)) Begin
+                // Insert root pseudo to overwrite brand-color
+                Move (sCss + sCRLF + "<style>:root { --brand-color: var(--default-color); }</style>") to sCss
+            End
+            
+            // Replace with the clients brand color
+            Move (Replace("--brand-color: var(--default-color);", sCss, "--brand-color: " + If(bLeadingHashtag, "", "#") + tClient.sClientBrandColor + ";")) to sCss
+            WebSet psHtml of oCss to sCss
+        End
+    End_Procedure
+    
+    Procedure ShowError String sErrorTitle String sErrorDescription
+        Boolean bShow
+        
+        If (SizeOfString(sErrorTitle) > 0) Move True to bShow 
+        
+        WebSet pbRender of oConsentWebGroup to (not(bShow))
+        WebSet pbRender of oErrorWebGroup to bShow
+
+        WebSet psHtml of oErrorDescription to (SFormat("<p class='error-description'><b>%1:</b> %2</p>", sErrorTitle, sErrorDescription))
+    End_Procedure
+    
+    Procedure ResetState
+        String[] asEmpty
+
+        Send ShowError "" ""
+        
+        WebSet psContinueUrl        to ""
+        WebSet psClientId           to ""
+        WebSet pasScopes            to asEmpty
+        WebSet psClientRedirectUrl  to ""
+        WebSet psState              to ""
+        WebSet psResponseMode       to ""
+    End_Procedure
+End_Object
+
+
+
+

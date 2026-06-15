@@ -1,0 +1,91 @@
+Define C_OIDC_CHARACTER_SPACE for (Character(32))
+Define C_OIDC_VERB_GET        for "GET"
+Define C_OIDC_VERB_POST       for "POST"
+
+// Error query params
+Define C_OIDC_PARAM_ERROR                 for "error"
+Define C_OIDC_PARAM_ERROR_DESCRIPTION     for "error_description"
+Define C_OIDC_PARAM_ERROR_URI             for "error_uri"
+
+// authorize parameters
+Define C_OIDC_PARAM_SCOPE                   for "scope"
+Define C_OIDC_PARAM_RESPONSE_TYPE           for "response_type"
+Define C_OIDC_PARAM_CLIENT_ID               for "client_id"
+Define C_OIDC_PARAM_REDIRECT_URI            for "redirect_uri"
+Define C_OIDC_PARAM_STATE                   for "state"
+Define C_OIDC_PARAM_NONCE                   for "nonce"
+Define C_OIDC_PARAM_CODE                    for "code"
+Define C_OIDC_PARAM_CODE_CHALLENGE          for "code_challenge"
+Define C_OIDC_PARAM_CODE_CHALLENGE_METHOD   for "code_challenge_method"
+Define C_OIDC_PARAM_RESPONSE_MODE           for "response_mode"
+Define C_OIDC_PARAM_DISPLAY                 for "display"
+Define C_OIDC_PARAM_PROMPT                  for "prompt"
+Define C_OIDC_PARAM_MAX_AGE                 for "max_age"
+Define C_OIDC_PARAM_CLAIMS_LOCALES          for "claims_locales"
+Define C_OIDC_PARAM_UI_LOCALES              for "ui_locales"
+Define C_OIDC_PARAM_ID_TOKEN_HINT           for "id_token_hint"
+Define C_OIDC_PARAM_LOGIN_HINT              for "login_hint"
+Define C_OIDC_PARAM_ACR_VALUES              for "acr_values"
+Define C_OIDC_PARAM_REQUEST                 for "request"
+Define C_OIDC_PARAM_REQUEST_URI             for "request_uri"
+Define C_OIDC_PARAM_CONTINUE                for "continue"
+
+// token parameters
+Define C_OIDC_PARAM_CLIENT_SECRET           for "client_secret"
+Define C_OIDC_PARAM_GRANT_TYPE              for "grant_type"
+Define C_OIDC_PARAM_CODE_VERIFIER           for "code_verifier"
+Define C_OIDC_PARAM_REFRESH_TOKEN           for "refresh_token"
+Define C_OIDC_PARAM_USERNAME                for "username"
+
+// revoke parameters
+Define C_OIDC_PARAM_TOKEN                   for "token"
+
+// userinfo parameters
+Define C_OIDC_PARAM_ACCESS_TOKEN            for "access_token"
+
+// response_type values
+Define C_OIDC_RESPONSE_TYPE_CODE            for "code"
+
+// code_challenge_method values
+Define C_OIDC_CODE_CHALLENGE_S256           for "S256"
+Define C_OIDC_CODE_CHALLENGE_PLAIN          for "plain"
+
+// response_mode values
+Define C_OIDC_RESPONSE_MODE_QUERY           for "query"
+Define C_OIDC_RESPONSE_MODE_FRAGMENT        for "fragment"
+
+// display values
+Define C_OIDC_DISPLAY_PAGE                  for "page"
+
+// prompt values
+Define C_OIDC_PROMPT_NONE                   for "none"
+Define C_OIDC_PROMPT_LOGIN                  for "login"
+Define C_OIDC_PROMPT_CONSENT                for "consent"
+Define C_OIDC_PROMPT_SELECT_ACCOUNT         for "select_account"
+
+// grant type values
+Define C_OIDC_GRANT_TYPE_AUTH_CODE          for "authorization_code"
+Define C_OIDC_GRANT_TYPE_REFRESH_TOKEN      for "refresh_token"
+Define C_OIDC_GRANT_TYPE_CLIENT_CREDENTIALS for "client_credentials"
+
+// subject types
+Define C_OIDC_SUBJECT_TYPE_PUBLIC           for "public"
+
+// client types
+Define C_OIDC_CLIENT_TYPE_PUBLIC            for "public"
+Define C_OIDC_CLIENT_TYPE_CONFIDENTIAL      for "confidential"
+
+// token signing algorithms
+Define C_OIDC_ALGORITHM_RS256               for "RS256"
+Define C_OIDC_ALGORITHM_EDDSA               for "EdDSA"
+Define C_OIDC_EDDSA_CURVE_ED25519           for "Ed25519"
+
+// Json parameters
+Define C_OIDC_JSON_ACCESS_TOKEN             for "access_token"
+Define C_OIDC_JSON_TOKEN_TYPE               for "token_type"
+Define C_OIDC_JSON_REFRESH_TOKEN            for "refresh_token"
+Define C_OIDC_JSON_EXPIRES_IN               for "expires_in"
+Define C_OIDC_JSON_ID_TOKEN                 for "id_token"
+
+// Introspect parameters
+Define C_OIDC_INTROSPECT_ACTIVE             for "active"

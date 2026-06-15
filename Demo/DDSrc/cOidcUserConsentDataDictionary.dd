@@ -1,0 +1,24 @@
+﻿Use DataDict.pkg
+
+Open OidcUserConsent
+
+Class cOidcUserConsentDataDictionary is a DataDictionary
+    
+    Procedure Construct_Object
+        Forward Send Construct_Object
+        Set Main_File to OidcUserConsent.File_Number
+
+        Set Foreign_Field_Option DD_KEYFIELD DD_NOPUT to True
+        Set Foreign_Field_Option DD_KEYFIELD DD_FINDREQ to True
+        Set Foreign_Field_Option DD_INDEXFIELD DD_NOPUT to True
+        Set Foreign_Field_Option DD_DEFAULT DD_DISPLAYONLY to True
+
+    End_Procedure
+
+    Procedure Creating
+        Forward Send Creating
+        Move (CurrentDateTime()) to OidcUserConsent.GrantedAt
+    End_Procedure
+    
+    
+End_Class

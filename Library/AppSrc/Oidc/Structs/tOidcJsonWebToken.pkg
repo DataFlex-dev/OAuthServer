@@ -1,0 +1,16 @@
+Use tNameValuePair.pkg
+
+Struct tOidcJsonWebToken
+    String  sJTI
+    String  sScope
+    String  sClientId
+    String  sUsername
+    String  sTokenType
+    UBigInt ubiExp
+    UBigInt ubiIat
+    UBigInt ubiNbf
+    String  sSubject
+    String  sAudience
+    String  sIssuer
+    tNameValuePair[] atCustomClaims
+End_Struct

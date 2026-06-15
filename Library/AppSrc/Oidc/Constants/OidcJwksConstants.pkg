@@ -1,0 +1,7 @@
+Define C_OIDC_JWKS_KEYS     for "keys"
+Define C_OIDC_JWKS_KTY      for "kty"
+Define C_OIDC_JWKS_ALG      for "alg"
+Define C_OIDC_JWKS_KID      for "kid"
+Define C_OIDC_JWKS_USE      for "use"
+Define C_OIDC_JWKS_MODULUS  for "n"
+Define C_OIDC_JWKS_EXPONENT for "e"

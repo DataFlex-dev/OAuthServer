@@ -1,0 +1,11 @@
+Struct tOidcRefreshToken
+    String  sJTI
+    String  sClientId
+    String  sUserId
+    UBigInt ubiIat
+    UBigInt ubiExp
+    Boolean bUsed
+    Boolean bRevoked
+    String  sFamilyId
+    String  sAccessJti
+End_Struct

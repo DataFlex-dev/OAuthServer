@@ -1,0 +1,4 @@
+Struct tOidcTokenClaimMap
+    Integer iTokenType
+    String[] asClaims
+End_Struct

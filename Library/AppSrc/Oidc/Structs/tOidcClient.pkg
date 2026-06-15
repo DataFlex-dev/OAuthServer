@@ -1,0 +1,16 @@
+Struct tOidcClient
+    String      sClientId
+    Boolean     bEnabled
+    String      sClientName
+    String      sClientType
+    String      sClientDescription
+    String[]    asRedirectURIs
+    String[]    asAllowedGrantTypes
+    String[]    asAllowedScopes
+    Integer     iIDTokenLifetime
+    Integer     iAccessTokenLifetime
+    Integer     iRefreshTokenLifetime
+    String      sClientBrandColor
+    String      sClientLogoURL
+    DateTime    dtCreatedAt
+End_Struct

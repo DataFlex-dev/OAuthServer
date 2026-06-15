@@ -1,0 +1,1007 @@
+Use Oidc\Structs\tOidcScopeClaimsMap.pkg
+Use Oidc\Constants\OidcParameterConstants.pkg
+
+Procedure OidcEnsureTrailingSlash String ByRef sURI
+    If (Right(sURI, 1) <> "/") Begin
+        Move (sURI + "/") to sURI
+    End
+End_Procedure
+
+Procedure OidcEnsureTrailingBackslash String ByRef sURI
+    If (Right(sURI, 1) <> "\") Begin
+        Move (sURI + "\") to sURI
+    End
+End_Procedure
+
+Function OidcLeftOf String sInput String sDelim Returns String
+    Integer iPos
+    Move (Pos(sDelim, sInput)) to iPos
+    If (iPos > 0) Begin
+        Function_Return (Left(sInput, iPos - 1))
+    End
+    Function_Return sInput
+End_Function
+
+Function OidcRightOf String sInput String sDelim Returns String
+    Integer iPos
+    Move (Pos(sDelim, sInput)) to iPos
+    If (iPos > 0) Begin
+        Function_Return (Mid(sInput, Length(sInput) - iPos, iPos + 1))
+    End
+    Function_Return ""
+End_Function
+
+Procedure OidcNumBitsToBytes Integer ByRef iNum
+    Move ((iNum + 7) / 8) to iNum
+End_Procedure
+
+Procedure OidcAddBase64Padding String ByRef sText
+    Integer iRemainder
+    
+    Move (Mod(Length(sText),4)) to iRemainder
+    Case Begin
+        Case (iRemainder = 0)
+            // do nothing
+            Case Break
+        Case (iRemainder = 2)
+            Move (sText + "==") to sText
+            Case Break
+        Case (iRemainder = 3)
+            Move (sText + "=") to sText
+            Case Break
+        Case (iRemainder = 1)
+            Error DFERR_PROGRAM "Invalid Base64 length" // should not happen
+        Case Else
+            Error DFERR_PROGRAM "Unexpected remainder"
+    Case End
+End_Procedure
+
+Procedure OidcRemoveBase64Padding String ByRef sText
+    // Remove padding
+    While (Right(sText, 1) = "=")
+        Move (Left(sText, Length(sText) - 1)) to sText
+    Loop
+End_Procedure
+
+Procedure OidcBase64ToBase64Url String ByRef sText
+    // convert to base64 Url
+    Move (Replaces("+", sText, "-")) to sText
+    Move (Replaces("/", sText, "_")) to sText
+    Send OidcRemoveBase64Padding (&sText)
+End_Procedure
+
+Procedure OidcBase64UrlToBase64 String ByRef sText
+    // convert to base64
+    Move (Replaces("-", sText, "+")) to sText
+    Move (Replaces("_", sText, "/")) to sText
+    Send OidcAddBase64Padding (&sText)
+End_Procedure
+
+Procedure OidcGenerateUniqueScopeAndClaimJsonArrays tOidcScopeClaimsMap[] atScopeClaimsMap Handle ByRef hoUniqueScopesJson Handle ByRef hoUniqueClaimsJson
+    String[] asUniqueScopes asUniqueClaims
+    
+    Get Create (RefClass(cJsonObject)) to hoUniqueScopesJson
+    Get Create (RefClass(cJsonObject)) to hoUniqueClaimsJson
+    
+    Send OidcGenerateUniqueScopeAndClaimArrays atScopeClaimsMap (&asUniqueScopes) (&asUniqueClaims)
+    
+    Send DataTypeToJson of hoUniqueScopesJson asUniqueScopes
+    Send DataTypeToJson of hoUniqueClaimsJson asUniqueClaims
+End_Procedure
+
+Procedure OidcGenerateUniqueScopeAndClaimArrays tOidcScopeClaimsMap[] atScopeClaimsMap String[] ByRef asUniqueScopes String[] ByRef asUniqueClaims
+    Integer iScopeIndex iIndex iClaimIndex
+    
+    For iScopeIndex from 0 to (SizeOfArray(atScopeClaimsMap) - 1)
+        Move (SearchArray(atScopeClaimsMap[iScopeIndex].sScope, asUniqueScopes)) to iIndex
+        If (iIndex = -1) Begin
+            Move atScopeClaimsMap[iScopeIndex].sScope to asUniqueScopes[-1]
+        End
+        
+        For iClaimIndex from 0 to (SizeOfArray(atScopeClaimsMap[iScopeIndex].asAllowedClaims) - 1)
+            Move (SearchArray(atScopeClaimsMap[iScopeIndex].asAllowedClaims[iClaimIndex], asUniqueClaims)) to iIndex
+            If (iIndex = -1) Begin
+                Move atScopeClaimsMap[iScopeIndex].asAllowedClaims[iClaimIndex] to asUniqueClaims[-1]
+            End
+        Loop
+    Loop
+End_Procedure
+
+Function OidcRemoveStringArraySubset String[] asInput String[] asToRemove Returns String[]
+    Integer iIndex iSearchIndex
+    String[] asResult
+    
+    For iIndex from 0 to (SizeOfArray(asInput) - 1)
+        Move (SearchArray(asInput[iIndex], asToRemove)) to iSearchIndex
+        If (iSearchIndex = -1) Begin
+            Move asInput[iIndex] to asResult[-1]
+        End
+    Loop
+    
+    Function_Return asResult
+End_Function
+
+Function OidcRemoveNvpSubset tNameValuePair[] atInput tNameValuePair[] atToRemove Boolean bOptInverted Returns tNameValuePair[]
+    Integer iIndex iIndexTo iSearchIndex
+    tNameValuePair[] atResult
+    tNameValuePair tSearch
+    Boolean bInverted
+    
+    If (num_arguments > 2) Begin
+        Move bOptInverted to bInverted
+    End
+    Else Begin
+        Move False to bInverted
+    End
+    
+    Move (SizeOfArray(atInput) - 1) to iIndexTo
+   
+    For iIndex from 0 to iIndexTo
+        Move atInput[iIndex].sName to tSearch.sName
+        Move (SearchArray(tSearch, atToRemove)) to iSearchIndex
+        If ((not(bInverted) and iSearchIndex = -1) or (bInverted and iSearchIndex <> -1)) Begin
+            Move atInput[iIndex].sValue to tSearch.sValue
+            Move tSearch to atResult[-1]
+        End
+    Loop
+    
+    Function_Return atResult
+End_Function
+
+Procedure OidcIgnoreUnknownScopes String[] ByRef asScopes String[] asSupportedScopes
+    Integer iIndex iSearchIndex
+    String sCurrentScope
+    String[] asResult
+    
+    For iIndex from 0 to (SizeOfArray(asScopes) - 1)
+        Move asScopes[iIndex] to sCurrentScope
+        Move (SearchArray(sCurrentScope, asSupportedScopes)) to iSearchIndex
+        If (iSearchIndex >= 0) Begin
+            // Not found in supported scopes = ignore
+            Move sCurrentScope to asResult[-1]             
+        End
+    Loop
+    
+    Move asResult to asScopes
+End_Procedure
+
+Function OidcValidateStringArray String[] asInput String[] asAllowed Returns Boolean
+    Integer iSize iIndex iSearchIndex
+    String sCurrent
+    Boolean bOk
+    
+    Move (SizeOfArray(asInput)) to iSize
+    Move True to bOk
+    
+    For iIndex from 0 to (iSize - 1)
+        Move asInput[iIndex] to sCurrent
+        Move (SearchArray(sCurrent, asAllowed)) to iSearchIndex
+        // Not in the allow list
+        If (iSearchIndex = -1) Begin
+            Move False to bOk
+            Move iSize to iIndex
+        End
+    Loop
+    
+    Function_Return bOk
+End_Procedure
+
+Function CurrentRequestURI for cWebApp String ByRef sOptHost Returns String
+    String sForwarded sXFHost sXFProto sXFPort
+    String sHost sProto sPort sPath sURL
+    String sTmp
+    Integer iPosProto iPosHost iPosSep iSlashPos iStart iEnd
+
+    // -------------------------------------------------------------------
+    // RFC 7239 Forwarded header (highest priority)
+    // Example: proto=https;host=auth.example.com
+    // -------------------------------------------------------------------
+    Get ServerVariable "HTTP_FORWARDED" to sForwarded
+
+    If (sForwarded <> "") Begin
+        Move (Lowercase(sForwarded)) to sTmp
+        Move (Pos("proto=", sTmp)) to iPosProto
+        Move (Pos("host=",  sTmp)) to iPosHost
+
+        If (iPosProto > 0) Begin
+            Move (Pos(";", sTmp, iPosProto)) to iPosSep
+            Move (iPosProto + 6) to iStart
+            Move (Mid(sTmp, iPosSep - iStart, iStart)) to sProto
+        End
+
+        If (iPosHost > 0) Begin
+            Move (iPosHost + 5) to iStart
+            // Read last part till from iStart
+            Move (Mid(sTmp, Length(sTmp), iStart)) to sHost
+        End
+    End
+
+    // -------------------------------------------------------------------
+    // X-Forwarded-* headers
+    // -------------------------------------------------------------------
+    If (sHost  = "") Get ServerVariable "HTTP_X_FORWARDED_HOST"  to sXFHost
+    If (sProto = "") Get ServerVariable "HTTP_X_FORWARDED_PROTO" to sXFProto
+    If (sPort  = "") Get ServerVariable "HTTP_X_FORWARDED_PORT"  to sXFPort
+
+    If (sHost  = "" and sXFHost  <> "") Move sXFHost  to sHost
+    If (sProto = "" and sXFProto <> "") Move sXFProto to sProto
+    If (sPort  = "" and sXFPort  <> "") Move sXFPort  to sPort
+
+
+    // -------------------------------------------------------------------
+    // IIS direct values (fallback)
+    // -------------------------------------------------------------------
+    // HTTP_HOST usually includes port (example.com:8080)
+    If (sHost = "") Begin
+        Get ServerVariable "HTTP_HOST" to sTmp
+        If (sTmp <> "") Begin
+            If (Pos(":", sTmp)) Begin
+                Get OidcLeftOf sTmp ":" to sHost
+                Get OidcRightOf sTmp ":" to sPort
+            End
+            Else Move sTmp to sHost
+        End
+    End
+
+    // Protocol from IIS (HTTPS=on/off)
+    If (sProto = "") Begin
+        Get ServerVariable "HTTPS" to sTmp
+        If (Lowercase(Trim(sTmp)) = "on") Move "https" to sProto
+        Else Move "http" to sProto
+    End
+
+    // Port from IIS
+    If (sPort = "") Begin
+        Get ServerVariable "SERVER_PORT" to sPort
+    End
+
+    // Web application path
+    Get ServerVariable "SCRIPT_NAME" to sPath
+
+    // Ensure trailing slash
+    If (Right(sPath,1) <> "/") Move (sPath + "/") to sPath
+
+
+    // -------------------------------------------------------------------
+    // Normalize port (hide standard ports)
+    // -------------------------------------------------------------------
+    If ((sProto = "https" and (sPort = "443" or sPort = ""))) Move "" to sPort
+    If ((sProto = "http"  and (sPort = "80"  or sPort = ""))) Move "" to sPort
+
+    // -------------------------------------------------------------------
+    // Set sOptHost if present
+    // -------------------------------------------------------------------
+    If (num_arguments = 1) ;
+        Move sHost to sOptHost
+
+    // -------------------------------------------------------------------
+    // Construct final BaseURI
+    // -------------------------------------------------------------------
+    Move (sProto + "://" + sHost) to sURL
+
+    If (sPort <> "") Move (sURL + ":" + sPort) to sURL
+
+    Move (sURL + sPath) to sURL
+
+    Function_Return sURL
+End_Function
+
+Function OidcRemoveLocalPort String sUri Returns String
+    Integer iPos iPortPos iSlashPos
+    String sBeginPart sEndPart
+    
+    Move (Pos("localhost", Lowercase(sUri))) to iPos
+    If (not(iPos)) Begin
+        Move (Pos("127.0.0.1", sUri)) to iPos
+    End
+    
+    // Not a local uri
+    If (not(iPos)) ;
+        Function_Return sUri
+    
+    // Find a port indicator
+    Move (Pos(":", sUri, iPos)) to iPortPos
+    
+    // No port to remove
+    If (not(iPortPos)) ;
+        Function_Return sUri
+    
+    // Remove port from iPortPos till the next slash (or till the end of the url if no slash exists)
+    Move (Pos("/", sUri, iPos)) to iSlashPos
+    If (iSlashPos) Begin
+        Move (Left(sUri, iPortPos - 1)) to sBeginPart
+        Move (Right(sUri, SizeOfString(sUri) - iSlashPos + 1)) to sEndPart
+    End
+    Else Begin
+        // example: http://localhost:50123
+        Move (Left(sUri, iPortPos - 1)) to sBeginPart
+        Move "" to sEndPart
+    End
+    
+    
+    Function_Return (sBeginPart + sEndPart)
+End_Function
+
+Function ApplicationBaseURL for cWebHttpHandler Returns String
+    String sUrl sPath
+    Integer iPos
+    
+    Get CurrentRequestURI to sUrl
+    Get psPath to sPath
+    
+    Move (Pos(sPath, sUrl)) to iPos
+    If (iPos > 0) Begin
+        Move (Left(sUrl, iPos - 1)) to sUrl
+    End
+    
+    Function_Return sUrl
+End_Function
+
+Function HasDuplicateGetParameter for cWebHttpHandler Returns Boolean
+    String sQueryString sCurrentParam
+    String[] aParams aSplitParams
+    Integer iSize iIndex iPos iCount
+    Boolean bHasDuplicate
+
+    Get psRequestQueryString to sQueryString
+    Get StrSplitToArray sQueryString "&" to aParams
+    
+    Move (SizeOfArray(aParams)) to iSize
+    
+    For iIndex from 0 to (iSize - 1)
+        Move aParams[iIndex] to sCurrentParam
+        Move (Pos("=", sCurrentParam)) to iPos
+        
+        If (iPos) Begin
+            // client_id=1234 -> iPos = 10, so we take iPos - 1
+            Move (Left(sCurrentParam, iPos - 1)) to sCurrentParam
+        End
+        
+        Move sCurrentParam to aSplitParams[-1]
+        
+        Move (CountArray(sCurrentParam, aSplitParams)) to iCount
+        If (iCount = 2) Begin
+            Move True to bHasDuplicate
+            Move iSize to iIndex
+        End
+    Loop
+    
+    Function_Return bHasDuplicate
+End_Function
+
+Procedure OidcAddUrlParam String ByRef sUrl String sName String sValue String sMarker
+    Integer iPos
+
+    Get UrlEncode sName  False to sName
+    Get UrlEncode sValue False to sValue
+
+    // Check for unique (reserved) query string marker
+    Move (Pos(sMarker, sUrl)) to iPos
+
+    If (not(iPos)) Begin
+        Move (sUrl + sMarker) to sUrl
+    End
+    Else Begin
+        // we had a question mark/hashtag (fragment mode) so we expect to be an extra parameter here
+        Move (sUrl + "&") to sUrl
+    End
+
+    Move (sUrl + sName + '=' + sValue) to sUrl
+End_Procedure
+
+Procedure AddUrlParam for cWebHttpHandler String ByRef sUrl String sName String sValue String sMarker
+    Send OidcAddUrlParam (&sUrl) sName sValue sMarker
+End_Procedure
+
+Function RequestQueryString for cWebApp Returns String
+     Integer iPos iPos2 
+     String sUrl sResult
+        
+    //  Get the URL from the HTTP header
+    Get ServerVariable of ghoWebServiceDispatcher "HTTP_REFERER" to sUrl
+    
+    If (Trim(sUrl) <> "") Begin
+        //  Find ? indicating GET parameters
+        
+        // url?abc=123&huppeldepup=123#jemoeder
+        Move (Pos("?", sUrl)) to iPos
+        If (iPos > 0) Begin
+            Move (Pos("#", sUrl)) to iPos2
+            If (iPos2) Begin
+                Move (Mid(sUrl, iPos2 - iPos, iPos)) to sResult
+            End
+            Else Begin
+                Move (Right(sUrl, Length(sUrl) - iPos)) to sResult
+            End
+        End
+    End
+    
+    Function_Return sResult
+End_Function
+
+Function OidcCapitalize String sInput Returns String
+    Function_Return (Uppercase(Left(sInput, 1)) + Right(sInput, Length(sInput) - 1))
+End_Function
+
+Function OidcParameterFromUrl String sUrl String sParam Returns String
+    String sSearch sResult
+    Integer iPos iPosAmpersand iPosFragment iPosParamStart iChars
+    
+    Move (sParam + '=') to sSearch
+    
+    Move (Pos(sSearch, sUrl)) to iPos
+    Move (iPos + Length(sSearch)) to iPosParamStart
+    Move (Pos("&", sUrl, iPos)) to iPosAmpersand
+    
+    If (iPos and iPosAmpersand = 0) Begin
+        // Might be the last parameter, check for a fragment
+        Move (Pos("#", sUrl, iPos)) to iPosFragment
+        If (iPosFragment) Begin
+            // Take mid till the fragment
+            Move (iPosFragment - iPosParamStart) to iChars
+            Move (Mid(sUrl, iChars, iPosParamStart)) to sResult
+        End
+        Else Begin
+            // Take right starting from the character after 'sParam='
+            Move (Length(sUrl) - iPosParamStart + 1) to iChars
+            Move (Right(sUrl, iChars)) to sResult
+        End
+    End
+    Else If (iPos) Begin
+        // Take from param start till the ampersand
+        Move (iPosAmpersand - iPosParamStart) to iChars
+        Move (Mid(sUrl, iChars, iPosParamStart)) to sResult
+    End
+    
+    // Replace "+" signs with spaces
+    Move (Replaces("+", sResult, C_OIDC_CHARACTER_SPACE)) to sResult
+    Get UrlDecode sResult to sResult
+    
+    Function_Return sResult
+End_Function
+
+Function OidcUrlWithoutPrompt String sUrl String sPromptToRemove Returns String
+    String sBase sQuery sFragment sKeyValue sKey sPrompt sNewPrompt sResult
+    String[] asParams asOut asPrompt
+    Integer iQuestion iFragment iPos iIndex iIndexTo
+    Boolean bHasPrompt
+
+    Move sUrl to sBase
+    Move (Pos("#", sBase)) to iFragment
+    If (iFragment > 0) Begin
+        Move (Mid(sBase, Length(sBase) - iFragment, iFragment + 1)) to sFragment
+        Move (Left(sBase, iFragment - 1)) to sBase
+    End
+
+    Move (Pos("?", sBase)) to iQuestion
+    If (iQuestion = 0) Begin
+        Function_Return sUrl
+    End
+
+    Move (Right(sBase, Length(sBase) - iQuestion)) to sQuery
+    Move (Left(sBase, iQuestion - 1)) to sBase
+    Move (StrSplitToArray(sQuery, "&")) to asParams
+    Move (SizeOfArray(asParams) - 1) to iIndexTo
+
+    For iIndex from 0 to iIndexTo
+        Move asParams[iIndex] to sKeyValue
+        Move (Pos("=", sKeyValue)) to iPos
+        If (iPos > 0) Begin
+            Move (Trim(Left(sKeyValue, iPos - 1))) to sKey
+            If (Lowercase(sKey) = C_OIDC_PARAM_PROMPT) Begin
+                Move (Trim(Right(sKeyValue, Length(sKeyValue) - iPos))) to sPrompt
+                Move True to bHasPrompt
+            End
+            Else Begin
+                Move sKeyValue to asOut[-1]
+            End
+        End
+        Else If (SizeOfString(sKeyValue) > 0) Begin
+            Move sKeyValue to asOut[-1]
+        End
+    Loop
+
+    If (bHasPrompt) Begin
+        Move (Replaces("+", sPrompt, C_OIDC_CHARACTER_SPACE)) to sPrompt
+        Move (Replaces("%20", sPrompt, C_OIDC_CHARACTER_SPACE)) to sPrompt
+        Get UrlDecode sPrompt to sPrompt
+        Move (StrSplitToArray(sPrompt, C_OIDC_CHARACTER_SPACE)) to asPrompt
+        Move (SizeOfArray(asPrompt) - 1) to iIndexTo
+
+        For iIndex from 0 to iIndexTo
+            If (SizeOfString(asPrompt[iIndex]) > 0 and Lowercase(asPrompt[iIndex]) <> Lowercase(sPromptToRemove)) Begin
+                Move (sNewPrompt * asPrompt[iIndex]) to sNewPrompt
+            End
+        Loop
+
+        If (SizeOfString(sNewPrompt) > 0) Begin
+            Get UrlEncode sNewPrompt False to sNewPrompt
+            Move (C_OIDC_PARAM_PROMPT + "=" + sNewPrompt) to asOut[-1]
+        End
+    End
+
+    Move sBase to sResult
+    Move (StrJoinFromArray(asOut, "&")) to sQuery
+    If (SizeOfString(sQuery) > 0) Begin
+        Move (sResult + "?" + sQuery) to sResult
+    End
+    If (SizeOfString(sFragment) > 0) Begin
+        Move (sResult + "#" + sFragment) to sResult
+    End
+
+    Function_Return sResult
+End_Function
+
+Function OidcIsHexColor String sColor Boolean ByRef bStartsWithHashtag Returns Boolean
+    String sClean sChar
+    Integer iLen iChar
+    
+    If (SizeOfString(sColor) = 0) Begin
+        Function_Return False
+    End
+    
+    // Must start with "#"
+    If (Left(sColor,1) = "#") Begin
+        Move (Right(sColor, Length(sColor) - 1)) to sClean
+        If (num_arguments >= 2) Begin
+            Move True to bStartsWithHashtag
+        End
+    End
+    Else Begin
+        Move sColor to sClean
+    End
+    
+    Move (Length(sClean)) to iLen
+
+    If (iLen <> 3 and iLen <> 6) Begin
+        Function_Return False
+    End
+
+    For iChar from 1 to iLen
+        Move (Uppercase(Mid(sClean, 1, iChar))) to sChar
+        
+        If ((sChar < "0" or sChar > "9") and (sChar < "A" or sChar > "F")) Begin
+            Function_Return False
+        End
+    Loop
+
+    Function_Return True
+End_Function
+
+Function OidcBase64DecodeString String sBase64 Returns String
+    Pointer pBinary
+    String sBinary
+    Integer iVoid iLen
+    
+    Move (Base64Decode(AddressOf(sBase64), &iLen)) to pBinary
+    Move (Repeat(Character(0), iLen)) to sBinary
+    Move (MemCopy(AddressOf(sBinary), pBinary, iLen)) to iVoid
+    Move (Free(pBinary)) to iVoid
+
+    Function_Return sBinary
+End_Function
+
+Function OidcBase64EncodeString String sText Returns String
+    Pointer pBase64
+    String sResult
+    Integer iVoid
+
+    Move (Base64Encode(AddressOf(sText), SizeOfString(sText))) to pBase64
+    Move (PointerToString(pBase64)) to sResult
+    Move (Free(pBase64)) to iVoid
+
+    Function_Return sResult
+End_Function
+
+Function OidcDedupeSpaceSeparatedString String sInput Returns String
+    String[] asData
+    
+    Move (StrSplitToArray(sInput, C_OIDC_CHARACTER_SPACE)) to asData
+    Get OidcDedupeStringArray asData to asData
+    Function_Return (StrJoinFromArray(asData, C_OIDC_CHARACTER_SPACE))
+End_Function
+
+Function OidcSpaceSeparatedStringContains String sInput String sValue Returns Boolean
+    String[] asData
+
+    Move (StrSplitToArray(Trim(sInput), C_OIDC_CHARACTER_SPACE)) to asData
+    Function_Return (SearchArray(sValue, asData) >= 0)
+End_Function
+
+Function OidcDedupeStringArray String[] asInput Returns String[]
+    Integer  iIndex iIndexTo iSearchIndex
+    String   sValue
+    String[] asResult
+    
+    Move (SizeOfArray(asInput) - 1) to iIndexTo
+    
+    For iIndex from 0 to iIndexTo
+        Move asInput[iIndex] to sValue
+        Move (BinarySearchArray(sValue, asResult)) to iSearchIndex
+        
+        If (iSearchIndex = -1) Begin
+            Move (BinarySearchInsertPos()) to iSearchIndex
+            Move (InsertInArray(asResult, iSearchIndex, sValue)) to asResult
+        End
+    Loop
+    
+    Function_Return asResult
+End_Function
+
+// This function returns an array containing only the elements that exist in BOTH arrays.
+// It is useful for intersection checks between Requested Scopes and Allowed Scopes.
+Function OidcIntersectStringArray String[] asRequested String[] asAllowed Returns String[]
+    Integer iIndex iSearchIndex iInsertPos
+    String[] asIntersection asLarge asSmall
+    
+    // Optimization: We want to search IN the larger array.
+    If (SizeOfArray(asRequested) > SizeOfArray(asAllowed)) Begin
+        Move asRequested to asLarge
+        Move asAllowed to asSmall
+    End
+    Else Begin
+        Move asAllowed to asLarge 
+        Move asRequested to asSmall
+    End
+    
+    // We sort the larger array once to use Binary Search.
+    Move (SortArray(asLarge)) to asLarge
+    
+    // Loop through the smaller array
+    For iIndex from 0 to (SizeOfArray(asSmall) - 1)
+        Move (BinarySearchArray(asSmall[iIndex], asLarge)) to iSearchIndex
+        
+        If (iSearchIndex <> -1) Begin
+            Move (BinarySearchArray(asSmall[iIndex], asIntersection)) to iSearchIndex
+        
+            If (iSearchIndex = -1) Begin
+                Move (BinarySearchInsertPos()) to iInsertPos
+                Move (InsertInArray(asIntersection, iInsertPos, asSmall[iIndex])) to asIntersection
+            End
+        End
+    Loop
+    
+    Function_Return asIntersection
+End_Function
+
+External_Function Oidc_WinAPI_GetTimeZoneInformation "GetTimeZoneInformation" Kernel32.Dll ;
+    Pointer lpTimeZoneInformation ;
+    Returns UInteger
+
+External_Function Oidc_WinApi_GetTimeFormatEx "GetTimeFormatEx" Kernel32.Dll ;
+    Pointer lpLocaleName ;
+    UInteger dwFlags ;
+    Pointer lpsSystemTime ;
+    Pointer lpFormat ;
+    Pointer lpTimeStr ;
+    Integer cchTime ;
+    Returns Integer
+
+External_Function Oidc_WinApi_GetDateFormatEx "GetDateFormatEx" Kernel32.Dll ;
+    Pointer lpLocaleName ;
+    UInteger dwFlags ;
+    Pointer lpsSystemTime ;
+    Pointer lpFormat ;
+    Pointer lpDateStr ;
+    Integer cchDate ;
+    Pointer lpCalendar ;
+    Returns Integer
+
+
+Struct Oidc_tTimeZoneInformation
+    Integer Bias
+    UShort[32] StandardName
+    tWinSystemTime StandardDate
+    Integer StandardBias
+    UShort[32] DaylightName
+    tWinSystemTime DaylightDate
+    Integer DaylightBias
+End_Struct
+
+Function Oidc_FormatSystemTimeToTime tWinSystemTime SystemTimeIn Returns Time
+    Integer iDataLength
+    WString wsFormattedTime wsLocaleName
+    Time tFormattedTime
+
+    Move (Oidc_WinAPI_GetTimeFormatEx (AddressOf (wsLocaleName), 0, AddressOf (SystemTimeIn), 0, 0, 0)) to iDataLength
+    Move (ZeroString (iDataLength)) to wsFormattedTime
+    Move (Oidc_WinAPI_GetTimeFormatEx (AddressOf (wsLocaleName), 0, AddressOf (SystemTimeIn), 0, AddressOf (wsFormattedTime), iDataLength)) to iDataLength
+    Move (CString (wsFormattedTime)) to tFormattedTime
+
+    Function_Return tFormattedTime
+End_Function
+
+Function Oidc_FormatSystemTimeToDate tWinSystemTime SystemTimeIn Returns Date
+    Integer iDataLength
+    WString wsFormattedDate wsLocaleName
+    Date dFormattedDate
+
+    Move (Oidc_WinAPI_GetDateFormatEx (AddressOf (wsLocaleName), 0, AddressOf (SystemTimeIn), 0, 0, 0, 0)) to iDataLength
+    Move (ZeroString (iDataLength)) to wsFormattedDate
+    Move (Oidc_WinAPI_GetDateFormatEx (AddressOf (wsLocaleName), 0, AddressOf (SystemTimeIn), 0, AddressOf (wsFormattedDate), iDataLength, 0)) to iDataLength
+
+    Move (Date (Cstring (wsFormattedDate))) to dFormattedDate
+
+    Function_Return dFormattedDate
+End_Function
+
+Function Oidc_TransitionDateTimeForYear tWinSystemTime TransitionTimeIn Integer iYear Returns String
+    Date dtFindDay
+    Integer iOccurance iDecimalSeparator
+    String sFormattedTime sFormattedDate
+    Boolean bStop
+
+    If (TransitionTimeIn.wMonth > 0) Begin
+        Move 1/1/2000 to dtFindDay // a fixed date to make it a date
+        Move (DateSetYear (dtFindDay, iYear)) to dtFindDay
+        Move (DateSetMonth (dtFindDay, TransitionTimeIn.wMonth)) to dtFindDay
+
+        // Now we have the first day of the month so progress through the month to find the N-th occurance,
+        // present in the wDay member, of the weekday. When wDay is 5 it indicates the last occurance and
+        // not the 5th occurance.
+        If (TransitionTimeIn.wDay = 5) Begin
+            Move (DateAddMonth (dtFindDay, 1)) to dtFindDay
+            While (not (bStop))
+                Move (DateAddDay (dtFindDay, -1)) to dtFindDay
+                // DateGetDayOfWeek returns 1 for Sunday but in the TransitionDatetime this is a 0.
+                Move ((DateGetDayOfWeek (dtFindDay) - 1) = TransitionTimeIn.wDayOfWeek) to bStop
+            Loop
+        End
+        Else Begin
+            While (not (bStop))
+                // DateGetDayOfWeek returns 1 for Sunday but in the TransitionDatetime this is a 0.
+                If ((DateGetDayOfWeek (dtFindDay) - 1) = TransitionTimeIn.wDayOfWeek) Begin
+                    Increment iOccurance
+                    Move (iOccurance = TransitionTimeIn.wDay) to bStop
+                End
+                If (not (bStop)) Begin
+                    Move (DateAddDay (dtFindDay, 1)) to dtFindDay
+                End
+            Loop
+        End
+
+        Move (DateGetDay (dtFindDay)) to TransitionTimeIn.wDay
+        Move iYear to TransitionTimeIn.wYear
+
+        Get Oidc_FormatSystemTimeToDate TransitionTimeIn to sFormattedDate
+        Get Oidc_FormatSystemTimeToTime TransitionTimeIn to sFormattedTime
+        If (TransitionTimeIn.wMilliseconds > 0) Begin
+            Get_Attribute DF_DECIMAL_SEPARATOR to iDecimalSeparator
+            Move (sFormattedTime + Character (iDecimalSeparator) + Cast (TransitionTimeIn.wMilliseconds, String)) to sFormattedTime
+        End
+
+        Function_Return (sFormattedDate * sFormattedTime)
+    End
+
+    Function_Return ""
+End_Function
+
+Function Oidc_ConvertDateTimeToUtc DateTime dtInput Returns DateTime
+    Integer iUTCTimeOffSet iUtcTimeOffsetMins iUTCTimeOffsetHrs iRetVal iYear
+    String sUTCTimeOffSet sStandard sDaylight
+    DateTime dtTimezone dtCurrentDateTime
+    TimeSpan tsTimezoneDiff
+    Oidc_tTimeZoneInformation tzInfo
+
+    // Get Current timezone information
+    Move (Oidc_WinAPI_GetTimeZoneInformation(AddressOf(tzInfo))) to iRetVal
+    // Check where the current system timezone has daylight savings
+    If (tzInfo.StandardDate.wMonth > 0 and tzInfo.DaylightDate.wMonth > 0) Begin
+        // Get the current year so we can get the transistion date time
+        Move (DateGetYear(dtInput)) to iYear
+
+        // Get the transistion datetime to standard
+        Get Oidc_TransitionDateTimeForYear tzInfo.StandardDate iYear to sStandard
+        // Get the transistion datetime to daylight
+        Get Oidc_TransitionDateTimeForYear tzInfo.DaylightDate iYear to sDayLight
+
+        Case Begin
+            Case ((dtInput < sDaylight) or (dtInput > sStandard))
+                Move (tzInfo.Bias + tzInfo.StandardBias) to iUtcTimeOffsetMins
+                Case Break
+            Case Else
+                Move (tzInfo.Bias + tzInfo.DaylightBias) to iUtcTimeOffsetMins
+        Case End
+    End 
+    Else Begin
+        Move tzInfo.Bias to iUtcTimeOffsetMins
+    End
+
+    Move (iUtcTimeOffsetMins * -1) to iUtcTimeOffsetMins
+
+    Move (SpanAddMinute(tsTimezoneDiff, iUtcTimeOffsetMins)) to tsTimezoneDiff
+    Move (dtInput - tsTimezoneDiff) to dtInput
+
+    Function_Return dtInput
+End_Function
+
+//Procedure SetInferredMemberValue String sMember String sValue for cJsonObject
+//    Integer iType
+//    
+//    // Default to string
+//    Move jsonTypeString to iType
+//    
+//    // Check if numeric
+////    Get 
+//    
+//    // Check if boolean string
+//    If (Lowercase(sValue) = "true" or Lowercase(sValue) = "false") ;
+//        Move jsonTypeBoolean to iType
+//    
+//    Send SetMemberValue sMember iType sValue
+//End_Procedure
+
+// Could be useful later on
+//Procedure CreateFile String sFileName String sContent
+//    Handle hoWorkspace
+//    String sPath sFullPath
+//    Integer iPos iChOut
+//    String[] asLines
+//    
+//    Get phoWorkspace of ghoApplication to hoWorkspace
+//    Get psDataPath of hoWorkspace to sPath
+//    // Check if sPath ends with "\"
+//    Move (Pos("\", sPath, SizeOfString(sPath))) to iPos
+//    If (not(iPos)) Begin
+//        Move (sPath + "\") to sPath
+//    End
+//    
+//    Move (sPath + sFileName) to sFullPath
+//    
+//    Move (Seq_New_Channel()) to iChOut
+//    
+//    If (iChOut = DF_SEQ_CHANNEL_NOT_AVAILABLE) Begin
+//        Error DFERR_CANT_CREATE_FILE (SFormat("Saving file %1 went wrong.", sFullPath))
+//        Procedure_Return
+//    End
+//    
+//    Direct_Output channel iChOut sFullPath
+//    
+//    Move (StrSplitToArray(sContent, "\r\n")) to asLines
+//    For iPos from 0 to (SizeOfArray(asLines) - 1)
+//        Writeln asLines[iPos]
+//    Loop
+//    
+//    Close_Output channel iChOut
+//    Send Seq_Release_Channel iChOut
+//End_Procedure
+
+// DONT REMOVE CODE BELOW (CAN BE TESTED LATER)
+// Creates RSA Public/Private key pairs and returns the EVP_PKEY* handle.
+//Function CreateRsaKeypair Returns Pointer
+//    Pointer pCtx          // Key Generation Context
+//    Pointer pExponent     // BIGNUM for Public Exponent (65537)
+//    Pointer pPKey         // Output EVP_PKEY structure
+//    Integer iResult
+//
+//    // Allocate structures
+//    Move (OpenSSL_EVP_PKEY_new()) to pPKey
+//    Move (OpenSSL_BN_new()) to pExponent
+//
+//    If (pPKey = 0 or pExponent = 0) Begin
+//        Error 0 "OpenSSL Error: Failed to allocate initial structures."
+//        If (pPKey <> 0) Move (OpenSSL_EVP_PKEY_free(pPKey)) to gVoid
+//        If (pExponent <> 0) Move (OpenSSL_BN_free(pExponent)) to gVoid
+//        Function_Return 0
+//    End
+//
+//    // 1. Setup Key Generation Context
+//    Move (OpenSSL_EVP_PKEY_CTX_new_id(NID_rsaEncryption, 0)) to pCtx
+//    If (pCtx = 0) Begin
+//        Error 0 "OpenSSL Error: Failed to create PKEY Context."
+//        Move (OpenSSL_EVP_PKEY_free(pPKey)) to gVoid
+//        Move (OpenSSL_BN_free(pExponent)) to gVoid
+//        Function_Return 0
+//    End
+//
+//    // 2. Initialize and set parameters (2048 bits, Public Exponent 65537)
+//    Move (OpenSSL_EVP_PKEY_keygen_init(pCtx)) to iResult
+//    If (iResult <= 0) Begin
+//        Error 0 "OpenSSL Error: Failed to initialize keygen."
+//        Move (OpenSSL_EVP_PKEY_CTX_free(pCtx)) to gVoid
+//        Move (OpenSSL_EVP_PKEY_free(pPKey)) to gVoid
+//        Move (OpenSSL_BN_free(pExponent)) to gVoid
+//        Function_Return 0
+//    End
+//    
+//    // Set exponent to 65537 (RSA_F4)
+//    Move (OpenSSL_BN_set_word(pExponent, RSA_F4)) to iResult
+//    Move (OpenSSL_EVP_PKEY_CTX_set_rsa_keygen_pubexp(pCtx, pExponent)) to iResult
+//    Move (OpenSSL_EVP_PKEY_CTX_set_rsa_keygen_bits(pCtx, 2048)) to iResult
+//
+//    // 3. Generate the key pair
+//    Move (OpenSSL_EVP_PKEY_keygen(pCtx, AddressOf(pPKey))) to iResult
+//
+//    // 4. Cleanup context and exponent (key is returned)
+//    Move (OpenSSL_EVP_PKEY_CTX_free(pCtx)) to gVoid
+//    Move (OpenSSL_BN_free(pExponent)) to gVoid
+//
+//    If (iResult <= 0) Begin
+//        Error 0 "OpenSSL Error: Key generation failed."
+//        // pPKey is often NULL on failure, but safety first
+//        If (pPKey <> 0) Move (OpenSSL_EVP_PKEY_free(pPKey)) to gVoid
+//        Function_Return 0
+//    End
+//    
+//    // Returns a pointer to the generated EVP_PKEY structure
+//    Function_Return pPKey
+//End_Function
+//
+//// 2. Converts EVP_PKEY to PEM format
+//Function PkeyToPem Pointer pKey Boolean bIsPrivate Returns String
+//    Pointer pBIO
+//    String sPemOutput
+//    BigInt biLength
+//    Integer iReadLen
+//    Pointer pBuffer // Placeholder for a dynamic memory buffer
+//
+//    // 1. Create a memory BIO (Buffer I/O)
+//    Move (OpenSSL_BIO_new(OpenSSL_BIO_s_mem())) to pBIO
+//    If (pBIO = 0) Begin
+//        Error 0 "OpenSSL Error: Failed to create memory BIO."
+//        Function_Return ""
+//    End
+//
+//    // 2. Write the key to the BIO in PEM format
+//    If bIsPrivate Begin
+//        // PEM_write_bio_PKCS8PrivateKey requires EVP_PKEY*
+//        Move (OpenSSL_PEM_write_bio_PKCS8PrivateKey(pBIO, pKey, 0, 0, 0, 0, 0)) to iReadLen
+//    End
+//    Else Begin
+//        // PEM_write_bio_PUBKEY requires EVP_PKEY*
+//        Move (OpenSSL_PEM_write_bio_PUBKEY(pBIO, pKey)) to iReadLen
+//    End
+//
+//    If (iReadLen <= 0) Begin
+//        Error 0 "OpenSSL Error: Failed to write key to BIO buffer."
+//        Move (OpenSSL_BIO_free_all(pBIO)) to gVoid
+//        Function_Return ""
+//    End
+//
+//    // 3. Read the PEM output from the BIO buffer
+//    Move (OpenSSL_BIO_ctrl_pending(pBIO)) to biLength
+//    
+//    // --- UNSAFE MEMORY OPERATIONS BEGIN HERE ---
+//    // Placeholder output
+//    If (biLength > 0) Begin
+//        Move (SFormat("<PEM OUTPUT (%1 bytes) - Copy required>", biLength)) to sPemOutput
+//    End
+//    
+//    // --- UNSAFE MEMORY OPERATIONS END HERE ---
+//
+//    // 4. Cleanup
+//    Move (OpenSSL_BIO_free_all(pBIO)) to gVoid
+//
+//    Function_Return sPemOutput
+//End_Function
+//
+//// 3. Extracts n (Modulus) and e (Exponent) for JWKS
+//Function ExtractRsaPublicComponents Pointer pPKey Pointer ByRef ppnModulus Pointer ByRef ppeExponent Returns Boolean
+//    Pointer pRSA
+//    Pointer ppN ppE ppD // Temporary pointers for the RSA_get0_key function
+//    Integer iResult
+//
+//    // 1. Get the underlying RSA structure from the generic EVP_PKEY
+//    Move (OpenSSL_EVP_PKEY_get0_RSA(pPKey)) to pRSA
+//
+//    If (pRSA = 0) Begin
+//        Error 0 "OpenSSL Error: EVP_PKEY does not contain an RSA key."
+//        Function_Return False
+//    End
+//
+//    // 2. Extract the components (Modulus 'n' and Public Exponent 'e')
+//    // NOTE: This uses pointers-to-pointers (ppN, ppE) which will point to BIGNUMs inside the pRSA structure.
+//    Move (OpenSSL_RSA_get0_key(pRSA, AddressOf(ppN), AddressOf(ppE), AddressOf(ppD))) to iResult
+//    
+//    If (iResult = 0) Begin
+//        Error 0 "OpenSSL Error: Failed to extract RSA components."
+//        Function_Return False
+//    End
+//
+//    // 3. Store the resulting BIGNUM pointers in the ByRef parameters.
+//    // The BIGNUM structures are owned by pPKey and should NOT be freed separately.
+//    Set ppnModulus to ppN
+//    Set ppeExponent to ppE
+//
+//    Function_Return True
+//End_Function

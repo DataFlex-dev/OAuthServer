@@ -1,0 +1,4 @@
+#REPLACE FILE4 OidcClientScope
+#REPLACE OidcClientScope.File_Number |CI4
+#REPLACE OidcClientScope.ClientId |FS4,1
+#REPLACE OidcClientScope.Scope |FS4,2

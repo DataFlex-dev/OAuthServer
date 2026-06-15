@@ -1,0 +1,4 @@
+#REPLACE FILE2 OidcCallbackUrl
+#REPLACE OidcCallbackUrl.File_Number |CI2
+#REPLACE OidcCallbackUrl.ClientId |FS2,1
+#REPLACE OidcCallbackUrl.CallbackUrl |FS2,2

@@ -1,0 +1,2068 @@
+Use cWebHttpHandler.pkg
+Use cCharTranslate.pkg
+Use Oidc\cOidcSha256Hasher.pkg
+Use Oidc\OidcFunctions.pkg
+Use Oidc\Constants\OidcParameterConstants.pkg
+Use Oidc\Constants\OidcErrorConstants.pkg
+Use Oidc\Constants\OidcResponseConstants.pkg
+Use Oidc\Constants\OidcWellKnownConstants.pkg
+Use Oidc\Constants\OidcStandardClaimConstants.pkg
+Use Oidc\Constants\OidcStandardScopeConstants.pkg
+Use Oidc\Constants\OidcDataDictionaryConstants.pkg
+Use Oidc\Structs\tOidcConsentAudit.pkg
+Use Oidc\Structs\tOidcClient.pkg
+Use Oidc\Structs\tOidcJWK.pkg
+Use Oidc\Structs\tOidcJWKS.pkg
+Use Oidc\Structs\tOidcUserInfo.pkg
+Use Oidc\Structs\tOidcAuthorizationCodeInfo.pkg
+Use Oidc\Structs\tOidcRefreshToken.pkg
+Use Oidc\Structs\tOidcRequest.pkg
+Use Oidc\Structs\tOidcJsonWebToken.pkg
+
+Include_Text Oidc\OidcError.html as C_OIDC_HTML_PAGE_ERROR
+
+Enum_List
+    Define C_OIDC_CONTINUE_URL_LOGIN    for 0
+    Define C_OIDC_CONTINUE_URL_CONSENT
+End_Enum_List
+
+Class cOidcHandler is a cWebHttpHandler
+    Procedure Construct_Object
+        Handle hoObj
+        Forward Send Construct_Object
+        
+        Property Integer piOriginalErrObj    0  // The original Object id of the error handler (before setting it to the cOidcProvider handle)
+        Property Handle phoOidcProvider     0   // The OidcProvider class providing us with client/token data, and ways to save data to the backend
+        Property Handle phoLoginView        0   // The login view that will be used in our authorization flow
+        Property Handle phoOidcConsentView  0   // The consent view that will be used in our authorization flow
+        Property Integer piAuthCodeExpiration 300 // Determines when authorization codes are considered 'expired' (in seconds) 
+        
+        // Parameter properties
+        Property String             psState       
+        Property String             psRedirectURI 
+        Property String             psResponseType
+        Property String             psResponseMode
+        Property String             psEndpoint
+        Property String             psOriginalScope
+        Property String[]           pasScopes       
+        Property tOidcClient        ptClient
+        Property tOidcUserInfo      ptUserInfo
+        Property tNameValuePair[]   patParams
+        Property DateTime           pdtTimestamp
+        Property UShort             psStatusCode 200
+        Property String             psErrorCode
+        Property String             psErrorMessage
+        Property String             psRawData
+        Property String             psRequestVerb
+        Property Boolean            pbScopeChanged
+        
+        Set psPath to "oidc/v1"
+        Set psVerbs to "POST,GET"
+        
+        Object oSha256 is a cOidcSha256Hasher
+        End_Object
+    End_Procedure
+
+    Procedure End_Construct_Object
+        Handle hoProvider
+
+        Forward Send End_Construct_Object
+
+        Get ProviderHandle to hoProvider
+        Set phoOidcHandler of hoProvider to Self
+    End_Procedure
+
+    Function ProviderHandle Returns Handle
+        Handle hoOidcProvider
+        
+        Move False to Err
+        Get phoOidcProvider to hoOidcProvider
+        If (hoOidcProvider = 0) Begin
+            // ToDo: Log it
+            Error DFERR_PROGRAM "Invalid phoOidcProvider value in cOidcHandler.pkg."
+        End
+        
+        Function_Return hoOidcProvider
+    End_Function
+    
+    Function ConsentViewHandle Returns Handle
+        Handle hoOidcConsentView
+        
+        Move False to Err
+        Get phoOidcConsentView to hoOidcConsentView
+        If (hoOidcConsentView = 0) Begin
+            // ToDo: Log it
+            Error DFERR_PROGRAM "Invalid phoOidcConsentView value in cOidcHandler.pkg."
+        End
+        
+        Function_Return hoOidcConsentView
+    End_Function
+    
+    Procedure ResetState
+        String[] asEmpty
+        tOidcClient tOidcClientEmpty
+        tOidcUserInfo tUserInfoEmpty
+        tNameValuePair[] tNameValuePairEmpty
+        
+        Set psState         to ""
+        Set psRedirectURI   to ""
+        Set psResponseType  to ""
+        Set psResponseMode  to ""
+        Set psEndpoint      to ""
+        Set psOriginalScope to ""
+        Set pasScopes       to asEmpty
+        Set ptClient        to tOidcClientEmpty
+        Set ptUserInfo      to tUserInfoEmpty
+        Set patParams       to tNameValuePairEmpty
+        Set pdtTimestamp    to (CurrentDateTime())
+        Set psStatusCode    to 200
+        Set psErrorCode     to ""
+        Set psErrorMessage  to ""
+        Set psRawData       to ""
+        Set psRequestVerb   to ""
+        Set pbScopeChanged  to False
+    End_Procedure
+    
+    Procedure OnPreRequest String sVerb String sPath
+        Integer iErrObjId
+        Handle hoOidcProvider
+        
+        Forward Send OnPreRequest sVerb sPath
+        
+        Move Error_Object_Id to iErrObjId
+        Set piOriginalErrObj to iErrObjId
+        
+        // Set the cache headers
+        Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_CACHE_CONTROL C_OIDC_CACHE_CONTROL_NO_STORE
+        Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_PRAGMA        C_OIDC_PRAGMA_NO_CACHE
+        
+        Get ProviderHandle to hoOidcProvider
+        If (hoOidcProvider <> 0) Begin
+            Move hoOidcProvider to Error_Object_Id
+        End
+        
+        Send ResetState
+        
+        Set psRequestVerb to sVerb        
+    End_Procedure
+    
+    Procedure OnHttpRequest String sVerb String sPath String sContentType String sAcceptType DWord iSize
+        Boolean bCancelRequest
+        String sURI sHost sHttps sBasePath
+        Handle hoOidcProvider
+        
+        Get CurrentRequestURI (&sHost) to sURI
+        
+        // Strip leading slash of sPath
+        Move (Right(sPath, SizeOfString(sPath) - 1)) to sPath
+        Set psEndpoint to sPath
+        
+        Case Begin    
+            Case (sPath = C_OIDC_ENDPOINT_TOKEN and sVerb <> C_OIDC_VERB_POST)
+                // Token endpoint is always post
+                Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_ALLOW C_OIDC_VERB_POST
+                Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_CONTENT_TYPE C_OIDC_CONTENT_TYPE_APPLICATION_JSON
+                Send SetResponseStatus C_OIDC_RESPONSE_STATUS_METHOD_NOT_ALLOWED C_OIDC_RESPONSE_REASON_METHOD_NOT_ALLOWED
+                Send SendErrorJson C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_GET_VERB_NOT_SUPPORTED False
+                Procedure_Return
+                Case Break
+                
+            Case (sPath = C_OIDC_ENDPOINT_REVOKE and sVerb <> C_OIDC_VERB_POST)
+                 // Revoke endpoint is always post
+                Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_ALLOW C_OIDC_VERB_POST
+                Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_CONTENT_TYPE C_OIDC_CONTENT_TYPE_APPLICATION_JSON
+                Send SetResponseStatus C_OIDC_RESPONSE_STATUS_METHOD_NOT_ALLOWED C_OIDC_RESPONSE_REASON_METHOD_NOT_ALLOWED
+                Send SendErrorJson C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_GET_VERB_NOT_SUPPORTED False
+                Procedure_Return
+                Case Break
+            
+            Case (sPath = C_OIDC_ENDPOINT_INTROSPECT and sVerb <> C_OIDC_VERB_POST)
+                // Introspect endpoint is always post
+                Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_ALLOW C_OIDC_VERB_POST
+                Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_CONTENT_TYPE C_OIDC_CONTENT_TYPE_APPLICATION_JSON
+                Send SetResponseStatus C_OIDC_RESPONSE_STATUS_METHOD_NOT_ALLOWED C_OIDC_RESPONSE_REASON_METHOD_NOT_ALLOWED
+                Send SendErrorJson C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_GET_VERB_NOT_SUPPORTED False
+                Procedure_Return
+                Case Break
+        Case End
+        
+        // ValidateSession
+        Get ProviderHandle to hoOidcProvider
+        If (hoOidcProvider = 0) Begin
+            // Show error
+            Send SendErrorHtml C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR
+            Procedure_Return
+        End
+        
+        Send OnValidateSession of hoOidcProvider
+        
+        Forward Send OnHttpRequest sVerb sPath sContentType sAcceptType iSize
+    End_Procedure
+    
+    Procedure OnPostRequest String sVerb String sPath
+        String sEndpoint
+        Handle hoOidcProvider
+        tOidcRequest tRequest
+        tOidcClient tClient
+        tOidcUserInfo tUserInfo
+        String[] asScopes
+        Integer iOriginalErrObj
+        
+        Forward Send OnPostRequest sVerb sPath
+        
+        Get psEndpoint to sEndpoint
+        
+        // Only log if its a supported endpoint, ignore other calls
+        If (sEndpoint = C_OIDC_ENDPOINT_AUTHORIZE   ;
+            or sEndpoint = C_OIDC_ENDPOINT_REVOKE   ;
+            or sEndpoint = C_OIDC_ENDPOINT_TOKEN    ;
+            or sEndpoint = C_OIDC_ENDPOINT_USERINFO ;
+            or sEndpoint = C_OIDC_ENDPOINT_INTROSPECT) Begin
+            Get ProviderHandle to hoOidcProvider
+    
+            // Leave begin end if we have no provider
+            If (hoOidcProvider = 0) ;
+                Break
+                
+            // Log, fill struct first
+            
+            // HTTP Method (GET/POST)
+            Move sVerb to tRequest.sHttpMethod
+            
+            // Endpoint
+            Get psEndpoint to tRequest.sEndpoint
+            
+            // Client
+            Get ptClient to tClient
+            Move tClient.sClientId to tRequest.sClientId
+            
+            // Sub
+            Get ptUserInfo to tUserInfo
+            Move tUserInfo.sSubject to tRequest.sSubjectId
+            
+            // Error?
+            Get psErrorCode to tRequest.sErrorCode
+            Get psErrorMessage to tRequest.sErrorMessage
+            
+            // Ip address
+            Get ServerVariable "REMOTE_ADDR" to tRequest.sIpAddress
+            
+            // Request data
+            If (sVerb = C_OIDC_VERB_GET) Begin
+                Get psRequestQueryString to tRequest.sRequestData
+            End
+            Else Begin
+                Get psRawData to tRequest.sRequestData
+            End
+            
+            // Response status
+            Get psStatusCode to tRequest.sResponseStatus
+
+            // Scope
+            Get pasScopes to asScopes
+            Move (StrJoinFromArray(asScopes, C_OIDC_CHARACTER_SPACE)) to tRequest.sScope
+            
+            // Timestamp
+            Get pdtTimestamp to tRequest.dtTimestamp
+            
+            Send OnSaveRequestAudit of hoOidcProvider tRequest
+        End
+        
+        Get piOriginalErrObj to iOriginalErrObj
+        Move iOriginalErrObj to Error_Object_Id
+    End_Procedure
+    
+    Procedure OnHttpGet String sPath String sAcceptType
+        String sState
+        Boolean bOk
+        
+        // State is used in the SendErrorResponse so we always need that first
+        Get RequestParameter C_OIDC_PARAM_STATE to sState
+        Set psState to sState
+        
+        // HTTPS Check
+        Get HttpsCheck to bOk
+        
+        If (not(bOk)) ;
+            Procedure_Return
+            
+        If (sPath = C_OIDC_ENDPOINT_USERINFO) Begin
+            Send HandleUserInfo
+            Procedure_Return
+        End
+            
+        If (sPath = C_OIDC_ENDPOINT_AUTHORIZE) Begin
+            Send HandleAuthorizationEndpoint
+            Procedure_Return
+        End
+        
+        // 404
+        Send SetResponseStatus C_OIDC_RESPONSE_STATUS_NOT_FOUND C_OIDC_RESPONSE_REASON_NOT_FOUND
+        Send SendErrorJson C_OIDC_ERR_INVALID_REQUEST (SFormat("The path '%1' is invalid.", sPath)) False
+    End_Procedure
+    
+    // Checks if https is used or not. "localhost" is allowed to use HTTP according to the spec.
+    // localhost doesn't reach the internet and thus can't be sniffed.
+    Function HttpsCheck Returns Boolean
+        String sVerb sURI sHost sHttps
+        
+        Get psRequestVerb to sVerb
+        Get CurrentRequestURI (&sHost) to sURI
+        Get ServerVariable "HTTPS" to sHttps
+        If (Lowercase(sHttps) = "off" and (sHost <> "localhost" and sHost <> "127.0.0.1")) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_BAD_REQUEST C_OIDC_RESPONSE_REASON_BAD_REQUEST
+            Send SendErrorResponse C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_HTTPS_REQUIRED
+            
+            Function_Return False
+        End
+        
+        Function_Return True
+    End_Function
+    
+    Procedure LoginRedirect
+        Handle hoOidcProvider hoLoginView
+        Boolean bLoggedIn
+        String sBaseUrl sContinue sStateViewName
+        tOidcClient tClient
+        
+        Get ProviderHandle to hoOidcProvider
+        If (hoOidcProvider = 0) Begin
+            Send ErrorRedirect C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR
+            Procedure_Return
+        End
+        
+        // Logout user if theyre logged in
+        Send OnGetIsUserLoggedIn of hoOidcProvider (&bLoggedIn)
+        If (bLoggedIn) Begin
+            Send OnLogoutSession of hoOidcProvider
+        End
+        
+        Send OnGetApplicationBaseUrl of hoOidcProvider (&sBaseUrl)
+        Get ContinueUrl C_OIDC_CONTINUE_URL_LOGIN to sContinue
+        
+        Get phoLoginView to hoLoginView
+        If (hoLoginView = 0) Begin
+            Send ErrorRedirect C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR
+            Procedure_Return
+        End
+        
+        Get ptClient to tClient
+        Get psStateViewName of hoLoginView to sStateViewName
+        Get UrlEncode sStateViewName False to sStateViewName
+        
+        Move (SFormat("%1?%2=%3&%4=%5#%6", sBaseUrl, C_OIDC_PARAM_CONTINUE, sContinue, C_OIDC_PARAM_CLIENT_ID, tClient.sClientId, sStateViewName)) to sContinue
+        
+        Send AddHttpResponseHeader "Location" sContinue
+        Send SetResponseStatus C_OIDC_RESPONSE_STATUS_FOUND C_OIDC_RESPONSE_REASON_FOUND
+    End_Procedure
+
+    Procedure ConsentRedirect
+        Handle hoOidcProvider hoConsentView
+        tOidcClient tClient
+        String[] asScopes
+        String sBaseUrl sContinue sStateViewName sDefaultStateViewName
+        
+        Get ProviderHandle to hoOidcProvider
+        Get phoOidcConsentView to hoConsentView
+        
+        If (hoOidcProvider = 0 or hoConsentView = 0) Begin
+            Send ErrorRedirect C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR
+            Procedure_Return 
+        End
+        
+        // Get client
+        Get ptClient to tClient
+        
+        // Construct Url
+        Send OnGetApplicationBaseUrl of hoOidcProvider (&sBaseUrl)
+        Get ContinueUrl C_OIDC_CONTINUE_URL_CONSENT to sContinue
+        
+        Get psStateViewName of hoConsentView to sStateViewName
+        Get UrlEncode sStateViewName False to sStateViewName
+
+        Move (SFormat("%1?%2=%3&%4=%5#%6", sBaseUrl, C_OIDC_PARAM_CONTINUE, sContinue, C_OIDC_PARAM_CLIENT_ID, tClient.sClientId, sStateViewName)) to sContinue
+        
+        Send AddHttpResponseHeader "Location" sContinue
+        Send SetResponseStatus C_OIDC_RESPONSE_STATUS_FOUND C_OIDC_RESPONSE_REASON_FOUND
+    End_Procedure
+
+    Procedure AuthCodeRedirect String sAuthCode
+        String sRedirectURI sState sResponseMode sMarker
+        
+        // Get the redirect URI
+        // https://example.com/cb
+        Get psRedirectURI to sRedirectURI
+        
+        // Get response mode
+        Get psResponseMode to sResponseMode
+        
+        // Get state
+        Get psState to sState
+        
+        Get UrlEncode sRedirectURI False to sRedirectURI
+        
+        // Use query response mode by default
+        Move "?" to sMarker
+        If (sResponseMode = C_OIDC_RESPONSE_MODE_FRAGMENT) Begin
+            Move "#" to sMarker
+        End
+        
+        Send AddUrlParam (&sRedirectURI) C_OIDC_PARAM_CODE sAuthCode sMarker
+        
+        // Did we have a state param?
+        If (SizeOfString(sState) > 0) Begin
+            Send AddUrlParam (&sRedirectURI) C_OIDC_PARAM_STATE sState sMarker
+        End
+        
+        Send AddHttpResponseHeader "Location" sRedirectURI 
+        Send SetResponseStatus C_OIDC_RESPONSE_STATUS_FOUND C_OIDC_RESPONSE_REASON_FOUND
+    End_Procedure
+
+    //    If the resource owner denies the access request or if the request
+    //    fails for reasons other than a missing or invalid redirection URI,
+    //    the authorization server informs the client by adding the following
+    //    parameters to the query component of the redirection URI using the
+    //    "application/x-www-form-urlencoded" format
+    Procedure ErrorRedirect String sError String sDescription String sOptErrorURI
+        String sErrorURI sRedirectURI sResponseMode sState sMarker
+        
+        // Get the redirect URI
+        // https://example.com/cb
+        Get psRedirectURI to sRedirectURI
+        
+        // Get response mode
+        Get psResponseMode to sResponseMode
+        
+        // Get state
+        Get psState to sState
+        
+        If (num_arguments > 2) Begin
+            Get CreateErrorRedirectUri sRedirectURI sError sDescription sState sResponseMode sOptErrorURI to sRedirectURI
+        End
+        Else Begin
+            Get CreateErrorRedirectUri sRedirectURI sError sDescription sState sResponseMode to sRedirectURI
+        End
+
+        Send AddHttpResponseHeader "Location" sRedirectURI 
+        Send SetResponseStatus C_OIDC_RESPONSE_STATUS_FOUND C_OIDC_RESPONSE_REASON_FOUND
+    End_Procedure
+
+    Function CreateErrorRedirectUri String sRedirectUri String sError String sDescription String sState String sResponseMode String sOptErrorURI Returns String
+        String sErrorURI sMarker
+        
+        If (num_arguments > 5) Begin
+            Move sOptErrorURI to sErrorURI
+        End
+
+        Get UrlEncode sRedirectURI False to sRedirectURI
+        
+        // Use query response mode by default
+        Move "?" to sMarker
+        If (sResponseMode = C_OIDC_RESPONSE_MODE_FRAGMENT) Begin
+            Move "#" to sMarker
+        End
+        
+        Send AddUrlParam (&sRedirectURI) C_OIDC_PARAM_ERROR sError sMarker
+        Send AddUrlParam (&sRedirectURI) C_OIDC_PARAM_ERROR_DESCRIPTION sDescription sMarker
+        If (SizeOfString(sErrorURI) > 0) Begin
+            Send AddUrlParam (&sRedirectURI) C_OIDC_PARAM_ERROR_URI sErrorURI sMarker
+        End
+        
+        // Did we have a state?
+        If (SizeOfString(sState) > 0) Begin
+            Send AddUrlParam (&sRedirectURI) C_OIDC_PARAM_STATE sState sMarker
+        End
+        
+        Function_Return sRedirectUri
+    End_Function
+
+    Procedure SendErrorHtml String sError String sDescription String sOptErrorURI
+        String sErrorURI sCssVars sWebAppTitle sHtmlTitle 
+        String sState sBaseURL sTemplate sTableRows
+        tOidcClient tClient
+        
+        Set psErrorCode to sError
+        Set psErrorMessage to sDescription
+        
+        If (num_arguments > 2) Begin
+            Move sOptErrorURI to sErrorURI
+        End
+        
+        Get ptClient to tClient
+        If (SizeOfString(tClient.sClientBrandColor) > 0) Begin
+            Move (sCssVars * "--brand-color: " + tClient.sClientBrandColor + ";") to sCssVars
+        End
+
+        Send HtmlTitle (&sWebAppTitle) (&sHtmlTitle)
+        Get psState to sState
+        
+        Get ApplicationBaseURL to sBaseURL
+        Send OidcEnsureTrailingSlash (&sBaseURL)
+        
+        // Parameters in the HTML: {{PAGE_TITLE}}, {{CSS_VARS}}, {{DESCRIPTION}} and {{TABLE_ROWS}}
+        Move C_OIDC_HTML_PAGE_ERROR                                 to sTemplate
+        Move (Replace("{{PAGE_TITLE}}", sTemplate, sHtmlTitle))     to sTemplate
+        Move (Replace("{{CSS_VARS}}", sTemplate, sCssVars))         to sTemplate
+        Move (Replace("{{DESCRIPTION}}", sTemplate, sDescription))  to sTemplate
+        
+        // Generate table rows
+        Send AddKeyValueRow C_OIDC_PARAM_ERROR              sError       (&sTableRows)
+        Send AddKeyValueRow C_OIDC_PARAM_ERROR_DESCRIPTION  sDescription (&sTableRows)
+        If (SizeOfString(sErrorURI) > 0) Begin
+            Send AddKeyValueRow C_OIDC_PARAM_ERROR_URI      sErrorURI    (&sTableRows)
+        End
+        If (SizeOfString(sState) > 0) Begin
+            Send AddKeyValueRow C_OIDC_PARAM_STATE          sState       (&sTableRows)
+        End
+        
+        Move (Replace("{{TABLE_ROWS}}", sTemplate, sTableRows))     to sTemplate
+        Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_CONTENT_TYPE C_OIDC_CONTENT_TYPE_TEXT_HTML
+        Send OutputString sTemplate      
+    End_Procedure
+    
+    Procedure SendErrorResponse String sError String sDescription String sOptErrorUri
+        String sVerb
+        
+        Get psRequestVerb to sVerb
+        
+        If (sVerb = C_OIDC_VERB_GET) Begin
+            If (num_arguments > 2) Begin
+                Send SendErrorHtml sError sDescription sOptErrorUri
+            End
+            Else Begin
+                Send SendErrorHtml sError sDescription
+            End
+        End
+        Else If (sVerb = C_OIDC_VERB_POST) Begin
+            If (num_arguments > 2) Begin
+                Send SendErrorJson sError sDescription sOptErrorUri
+            End
+            Else Begin
+                Send SendErrorJson sError sDescription
+            End
+        End
+    End_Procedure
+
+    Procedure AddKeyValueRow String sKey String sValue String ByRef sHtml
+        Get HtmlEncode sKey to sKey
+        Get HtmlEncode sValue to sValue
+        
+        Move (sHtml * ("<tr><td>" + sKey + "</td><td>" + sValue + "</td></tr>")) to sHtml
+    End_Procedure
+
+    Procedure SendErrorJson String sError String sDescription Boolean bSetResponseStatus String sOptErrorURI
+        String sErrorURI sJson
+        Handle hoJson
+        
+        Set psErrorCode to sError
+        Set psErrorMessage to sDescription
+        
+        If (num_arguments > 3) Begin
+            Move sOptErrorURI to sErrorURI
+        End
+        
+        Get Create (RefClass(cJsonObject)) to hoJson
+        Send InitializeJsonType of hoJson jsonTypeObject
+        
+        Send SetMemberValue of hoJson C_OIDC_PARAM_ERROR             jsonTypeString sError
+        Send SetMemberValue of hoJson C_OIDC_PARAM_ERROR_DESCRIPTION jsonTypeString sDescription
+        
+        If (SizeOfString(sErrorURI) > 0) Begin
+            Send SetMemberValue of hoJson C_OIDC_PARAM_ERROR_URI jsonTypeString sErrorURI
+        End
+        
+        Get Stringify of hoJson to sJson
+        Send Destroy of hoJson
+        
+        // Set HTTP Headers
+        Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_CONTENT_TYPE C_OIDC_CONTENT_TYPE_APPLICATION_JSON
+        If (bSetResponseStatus) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_BAD_REQUEST C_OIDC_RESPONSE_REASON_BAD_REQUEST
+        End
+        
+        Send OutputString sJson
+    End_Procedure
+    
+    Procedure SendInvalidRequestJson
+        Send SendErrorJson C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST True
+    End_Procedure
+
+    Procedure SendTokenJson String sAccessToken UBigInt ubiExpiresAt String sOptRefreshToken String sOptIdToken
+        DateTime dtNow
+        UBigInt ubiNow rExpiresIn
+        Handle hoJson
+        String sJson sOriginalScope sScopes
+        String[] asScopes
+        Boolean bScopeChanged
+        
+        Move (CurrentDateTime()) to dtNow
+        Get CurrentUnixTime to ubiNow
+        
+        Get Create (RefClass(cJsonObject)) to hoJson
+        Send InitializeJsonType of hoJson jsonTypeObject
+        
+        Send SetMemberValue of hoJson C_OIDC_JSON_ACCESS_TOKEN      jsonTypeString sAccessToken
+        Send SetMemberValue of hoJson C_OIDC_JSON_TOKEN_TYPE        jsonTypeString "Bearer"
+        // Calculate how long till it expires
+        Move (ubiExpiresAt - ubiNow) to rExpiresIn
+        If (rExpiresIn < 0) ;
+            Move 0 to rExpiresIn
+            
+        Send SetMemberValue of hoJson C_OIDC_JSON_EXPIRES_IN        jsonTypeInteger rExpiresIn
+        
+        If (num_arguments > 2 and SizeOfString(sOptRefreshToken) > 0) Begin
+            Send SetMemberValue of hoJson C_OIDC_JSON_REFRESH_TOKEN jsonTypeString sOptRefreshToken
+        End
+        
+        If (num_arguments > 3 and SizeOfString(sOptIdToken) > 0) Begin
+            Send SetMemberValue of hoJson C_OIDC_JSON_ID_TOKEN      jsonTypeString sOptIdToken
+        End
+        
+        Get psOriginalScope to sOriginalScope
+        Get pasScopes to asScopes
+        Get pbScopeChanged to bScopeChanged
+        Move (StrJoinFromArray(asScopes, C_OIDC_CHARACTER_SPACE)) to sScopes
+        
+        If (sScopes <> sOriginalScope or bScopeChanged) Begin
+            Send SetMemberValue of hoJson C_OIDC_PARAM_SCOPE jsonTypeString sScopes
+        End
+        
+        Get Stringify of hoJson to sJson
+        Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_CONTENT_TYPE C_OIDC_CONTENT_TYPE_APPLICATION_JSON
+        Send OutputString sJson
+    End_Procedure
+    
+    // "html"
+    Procedure SendNotFoundHtml String sVerb String sPath
+        String sBasePath
+        
+        Get psPath to sBasePath
+        Send OidcEnsureTrailingSlash (&sBasePath)
+        
+        Send SetResponseStatus C_OIDC_RESPONSE_STATUS_NOT_FOUND C_OIDC_RESPONSE_REASON_NOT_FOUND
+        Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_CONTENT_TYPE C_OIDC_CONTENT_TYPE_TEXT_HTML
+        Send OutputString (SFormat("Cannot %1 %2", sVerb, sBasePath + sPath))
+    End_Procedure
+
+    // Creates a continue URL parameter and strips the prompt value that caused the redirect.
+    Function ContinueUrl Integer iType Returns String
+        String sVerb sQuery sKeyValue sKey sContinue
+        String[] asParams asOut
+        Integer iIndex iIndexTo iPos iLength
+        tNameValuePair[] atParams
+        
+        // Manage query string
+        Get psRequestVerb to sVerb
+        If (sVerb = C_OIDC_VERB_GET) Begin
+            Get psRequestQueryString        to sQuery
+            Get StrSplitToArray sQuery "&"  to asParams
+            Move (SizeOfArray(asParams) - 1) to iIndexTo
+        End
+        Else If (sVerb = C_OIDC_VERB_POST) Begin
+            Get patParams to atParams
+            Move (SizeOfArray(atParams) - 1) to iIndexTo
+        End
+        
+        For iIndex from 0 to iIndexTo
+            If (sVerb = C_OIDC_VERB_GET) Begin
+                Move asParams[iIndex]       to sKeyValue
+            End
+            Else If (sVerb = C_OIDC_VERB_POST) Begin
+                Get UrlEncode atParams[iIndex].sName False to atParams[iIndex].sName
+                Get UrlEncode atParams[iIndex].sValue False to atParams[iIndex].sValue
+
+                Move (SFormat("%1=%2", atParams[iIndex].sName, atParams[iIndex].sValue)) to sKeyValue
+            End
+            
+            Move (Pos("=", sKeyValue))  to iPos
+            If (iPos > 0) Begin
+                Move (Trim(Left(sKeyValue, iPos - 1))) to sKey
+                
+                If (sKey = C_OIDC_PARAM_MAX_AGE) Begin
+                    // Max_age should be stripped after the first request
+                    // Simply don't add this back to asOut
+                End
+                Else Begin
+                    Move sKeyValue to asOut[-1]
+                End
+            End
+        Loop
+
+        Move (StrJoinFromArray(asOut, "&")) to sQuery
+        Get CurrentRequestURI to sContinue
+        
+        // Remove last slash
+        Move (Length(sContinue)) to iLength
+        If (Pos("/", sContinue, iLength)) Begin
+            Move (Left(sContinue, iLength - 1)) to sContinue
+        End
+        
+        // Construct url and encode
+        Move (sContinue + "?" + sQuery) to sContinue
+        If (iType = C_OIDC_CONTINUE_URL_LOGIN) Begin
+            Get OidcUrlWithoutPrompt sContinue C_OIDC_PROMPT_LOGIN to sContinue
+        End
+        Else If (iType = C_OIDC_CONTINUE_URL_CONSENT) Begin
+            Get OidcUrlWithoutPrompt sContinue C_OIDC_PROMPT_CONSENT to sContinue
+        End
+
+        Get UrlEncode sContinue True to sContinue
+        
+        Function_Return sContinue
+    End_Function
+
+    Procedure HtmlTitle String ByRef sWebAppTitle String ByRef sHtmlTitle
+        String sEndpoint
+        
+        Get psEndpoint to sEndPoint
+        Get OidcCapitalize sEndPoint to sEndPoint
+        
+        WebGet psApplicationTitle of ghoWebApp to sWebAppTitle
+        Move sWebAppTitle to sHtmlTitle
+        
+        If (SizeOfString(sEndPoint) > 0) Begin
+            // Prepend "Endpoint - " to sTitle
+            Move (sEndPoint * "-" * sWebAppTitle) to sHtmlTitle
+        End
+    End_Procedure
+
+    Procedure OnHttpPost String sPath String sContentType String sAcceptType DWord iSize
+        String sErrorDescription
+        Boolean bOk bHasDuplicates
+        String sData
+        tNameValuePair[] atParams
+        
+        If (SizeOfString(sContentType) > 0 and sContentType <> C_OIDC_CONTENT_TYPE_APPLICATION_X_WWW_FORM_URL_ENCODED) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_UNSUPPORTED_MEDIA_TYPE C_OIDC_RESPONSE_REASON_UNSUPPORTED_MEDIA_TYPE
+            If (SizeOfString(sContentType) = 0) Begin
+                Move C_OIDC_ERR_DESC_UNKNOWN_CONTENT_TYPE to sErrorDescription
+            End
+            Else Begin
+                Move (SFormat(C_OIDC_ERR_DESC_MEDIA_TYPE_UNSUPPORTED * C_OIDC_ERR_DESC_USE_X_WWW_FORM_URLENCODED, sContentType)) to sErrorDescription
+            End
+            Send SendErrorJson C_OIDC_ERR_INVALID_REQUEST sErrorDescription False
+            Procedure_Return
+        End
+        
+        // HTTPS check
+        Get HttpsCheck to bOk
+        
+        If (not(bOk)) ;
+            Procedure_Return
+        
+        Get RequestDataString to sData
+        Set psRawData to sData
+        
+        Get ParseFormUrlEncodedBody sData (&bHasDuplicates) to atParams
+        
+        If (bHasDuplicates) Begin
+            Send SendInvalidRequestJson
+            Procedure_Return
+        End
+        
+        Set patParams to atParams
+        
+        Case Begin
+            Case (sPath = C_OIDC_ENDPOINT_AUTHORIZE)
+                Send HandleAuthorizationEndpoint
+                Case Break
+                
+            Case (sPath = C_OIDC_ENDPOINT_TOKEN)
+                Send HandleTokenEndpoint
+                Case Break
+            
+            Case (sPath = C_OIDC_ENDPOINT_REVOKE)
+                Send HandleRevocation
+                Case Break
+            
+            Case (sPath = C_OIDC_ENDPOINT_USERINFO)
+                Send HandleUserInfo
+                Case Break
+            
+            Case (sPath = C_OIDC_ENDPOINT_INTROSPECT)
+                Send HandleIntrospect
+                Case Break
+            
+            Case Else
+                Send SendNotFoundHtml C_OIDC_VERB_POST sPath
+                Procedure_Return
+        Case End
+    End_Procedure
+    
+    Procedure HandleAuthorizationEndpoint
+        Handle hoOidcProvider
+        Boolean bHasDuplicateParams bExists bValidRedirect bOk bPromptNone bUserLoggedIn
+        Boolean bLoginRequired bConsentRequired bSelectAccountRequired bCodeChallengeExists bCodeChallengeMethodExists bMaxAgeExpired
+        String sVerb sScope sResponseType sClientId sRedirectUri sCodeChallenge sCodeChallengeMethod sMaxAge sRequest
+        String sNonce sResponseMode sPrompt sUserId sAuthCode
+        tOidcClient tClient
+        String[] asScopes asAllowedScopes asPromptTypes
+        tOidcUserInfo tUserInfo
+        Pointer pDecoded
+        Integer iLength iMaxAge
+        tOidcConsentAudit tConsent
+        DateTime dtNow
+        TimeSpan tsDiff
+        
+        Get psRequestVerb to sVerb
+        
+        If (sVerb = C_OIDC_VERB_GET) Begin
+            Get HasDuplicateGetParameter to bHasDuplicateParams
+            If (bHasDuplicateParams) Begin
+                Send SetResponseStatus C_OIDC_RESPONSE_STATUS_BAD_REQUEST C_OIDC_RESPONSE_REASON_BAD_REQUEST
+                Send SendErrorHtml C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST
+                Procedure_Return
+            End
+        End
+        
+        Get ProviderHandle to hoOidcProvider
+        
+        // If we got no handle we show an error page (we can't validate the callback URI)
+        If (hoOidcProvider = 0) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_INTERNAL_SERVER_ERROR C_OIDC_RESPONSE_REASON_INTERNAL_SERVER_ERROR
+            Send SendErrorHtml C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR
+            Procedure_Return
+        End
+        
+        // Gather the other query params (bExists checks for all the required parameters)
+        // First we check the minimum required parameters
+        // We check the client_id and redirect_uri first so we know if we can redirect on errors or not (client_id and redirect_uri are required too of course)
+        Get RequestParameter C_OIDC_PARAM_CLIENT_ID (&bExists) to sClientId
+        If (not(bExists)) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_BAD_REQUEST C_OIDC_RESPONSE_REASON_BAD_REQUEST
+            Send SendErrorResponse C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST
+            Procedure_Return
+        End
+        
+        Send OnGetClientInfo of hoOidcProvider sClientId (&tClient)
+        Set ptClient to tClient // Set the client before the check so we can use it in our logging
+        
+        If (sClientId <> tClient.sClientId) Begin
+            Move sClientId to tClient.sClientId
+            Set ptClient to tClient
+            
+            // Client is incorrect
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_BAD_REQUEST C_OIDC_RESPONSE_REASON_BAD_REQUEST
+            Send SendErrorHtml C_OIDC_ERR_UNAUTHORIZED_CLIENT C_OIDC_ERR_DESC_UNAUTHORIZED_CLIENT
+            Procedure_Return
+        End
+        
+        If (not(tClient.bEnabled)) Begin
+            // Client is disabled (no redirect)
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_FORBIDDEN C_OIDC_RESPONSE_REASON_FORBIDDEN
+            Send SendErrorResponse C_OIDC_ERR_UNAUTHORIZED_CLIENT C_OIDC_ERR_DESC_UNAUTHORIZED_CLIENT
+            Procedure_Return
+        End
+        
+        Get RequestParameter C_OIDC_PARAM_REDIRECT_URI (&bExists) to sRedirectUri
+        If (not(bExists)) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_BAD_REQUEST C_OIDC_RESPONSE_REASON_BAD_REQUEST
+            Send SendErrorResponse C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST
+            Procedure_Return
+        End
+        
+        // Check if the redirectUri is in the allowed URIs
+        Get ValidateRedirectUri of hoOidcProvider tClient sRedirectUri to bValidRedirect
+        
+        If (not(bValidRedirect)) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_BAD_REQUEST C_OIDC_RESPONSE_REASON_BAD_REQUEST
+            Send SendErrorResponse C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST
+            Procedure_Return
+        End
+        
+        Set psRedirectURI to sRedirectUri
+        
+        // Check if we got a request_parameter, if so we should return request_not_supported
+        Get RequestParameter C_OIDC_PARAM_REQUEST (&bExists) to sRequest
+        If (bExists) Begin
+            Send ErrorRedirect C_OIDC_ERR_REQUEST_NOT_SUPPORTED C_OIDC_ERR_DESC_REQUEST_NOT_SUPPORTED
+            Procedure_Return
+        End
+        
+        Get RequestParameter C_OIDC_PARAM_RESPONSE_MODE (&bExists) to sResponseMode
+        If (bExists) Begin
+            // Check for valid modes
+            If (sResponseMode <> C_OIDC_RESPONSE_MODE_QUERY and sResponseMode <> C_OIDC_RESPONSE_MODE_FRAGMENT) Begin
+                Send ErrorRedirect C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST
+                Procedure_Return
+            End
+        End
+        
+        Set psResponseMode to sResponseMode
+        
+        Get RequestParameter C_OIDC_PARAM_SCOPE (&bExists) to sScope
+        If (bExists) Begin
+            Set psOriginalScope to sScope
+            // Character 32 = " " (Space)
+            Get StrSplitToArray sScope C_OIDC_CHARACTER_SPACE to asScopes
+        End
+        Else Begin
+            Send OnGetDefaultClientScopes of hoOidcProvider sClientId (&asScopes)
+        End
+
+        Send OnGetSupportedScopesByClient of hoOidcProvider sClientId (&asAllowedScopes)
+        Get OidcIntersectStringArray asScopes asAllowedScopes to asScopes
+        Set pasScopes to asScopes
+        
+        If (SizeOfArray(asScopes) = 0) Begin
+            Send ErrorRedirect C_OIDC_ERR_INVALID_SCOPE C_OIDC_ERR_DESC_INVALID_SCOPE
+            Procedure_Return
+        End
+        
+        Get RequestParameter C_OIDC_PARAM_RESPONSE_TYPE (&bExists) to sResponseType
+        If (not(bExists)) Begin
+            Send ErrorRedirect C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST
+            Procedure_Return
+        End
+        
+        // Check if the response type is supported (Currently the Oidc library only supports authorization code flow, the most secure flow)
+        If (sResponseType <> C_OIDC_RESPONSE_TYPE_CODE) Begin
+            Send ErrorRedirect C_OIDC_ERR_UNSUPPORTED_RESPONSE_TYPE C_OIDC_ERR_DESC_UNSUPPORTED_RESPONSE_TYPE
+            Procedure_Return
+        End
+        
+        Get RequestParameter C_OIDC_PARAM_CODE_CHALLENGE (&bCodeChallengeExists) to sCodeChallenge
+        Get RequestParameter C_OIDC_PARAM_CODE_CHALLENGE_METHOD (&bCodeChallengeMethodExists) to sCodeChallengeMethod
+        
+        // Now we check for code_challenge and code_challenge_method if the client is public (optional for confidential clients)
+        If (tClient.sClientType = C_OIDC_CLIENT_TYPE_PUBLIC) Begin
+            If (not(bCodeChallengeExists)) Begin
+                Send ErrorRedirect C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_MISSING_CODE_CHALLENGE
+                Procedure_Return
+            End
+
+            If (not(bCodeChallengeMethodExists)) Begin
+                Send ErrorRedirect C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_MISSING_CODE_CHALLENGE_METHOD
+                Procedure_Return
+            End
+            
+            // Validate code_challenge_method
+            If (sCodeChallengeMethod <> C_OIDC_CODE_CHALLENGE_PLAIN and sCodeChallengeMethod <> C_OIDC_CODE_CHALLENGE_S256) Begin
+                Send ErrorRedirect C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_CODE_CHALLENGE_METHOD
+                Procedure_Return
+            End
+        End
+        
+        // Check for nonce param (OIDC id token)
+        Get RequestParameter C_OIDC_PARAM_NONCE to sNonce
+        
+        Send OnGetIsUserLoggedIn of hoOidcProvider (&bUserLoggedIn)
+        Send OnGetUserId of hoOidcProvider (&sUserId)
+        Send OnGetUserInfo of hoOidcProvider sUserId (&tUserInfo)
+        Set ptUserInfo to tUserInfo
+        
+        If (bUserLoggedIn) Begin
+            // Get scopes the user is authorized for
+            Send OnGetUserAuthorizedScopes of hoOidcProvider sUserId sClientId (&asAllowedScopes)
+            
+            Get OidcIntersectStringArray asScopes asAllowedScopes to asScopes
+            Set pasScopes to asScopes
+            
+            If (SizeOfArray(asScopes) = 0) Begin
+                Send ErrorRedirect C_OIDC_ERR_INVALID_SCOPE C_OIDC_ERR_DESC_INVALID_SCOPE
+                Procedure_Return
+            End
+        End
+        
+        // Check max_age
+        Get RequestParameter C_OIDC_PARAM_MAX_AGE (&bExists) to sMaxAge
+        If (bExists) Begin
+            Get OidcIsNumeric sMaxAge to bOk
+            If (not(bOk)) Begin
+                Send ErrorRedirect C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST
+                Procedure_Return
+            End
+            
+            Move sMaxAge to iMaxAge
+            If (iMaxAge < 0) Begin
+                Send ErrorRedirect C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST
+                Procedure_Return
+            End
+            
+            // Prompt=login overrides this
+            Move (CurrentDateTime()) to dtNow
+            If (IsNullDateTime(tUserInfo.dtLastLogin)) Begin
+                Move True to bMaxAgeExpired // We can't check it so it is expired by default
+            End
+            Else Begin
+               Move (dtNow - tUserInfo.dtLastLogin) to tsDiff
+               Move (SpanTotalSeconds(tsDiff) > iMaxAge) to bMaxAgeExpired
+            End
+        End
+        
+        // Check prompt type
+        Get RequestParameter C_OIDC_PARAM_PROMPT (&bExists) to sPrompt
+        If (bExists) Begin
+            Move (Trim(sPrompt)) to sPrompt
+            Get OidcSpaceSeparatedStringContains sPrompt C_OIDC_PROMPT_NONE to bPromptNone
+            
+            // If this parameter contains none with any other value, an error is returned.
+            If (bPromptNone and Pos(C_OIDC_CHARACTER_SPACE, sPrompt)) Begin
+                Send ErrorRedirect C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST
+                Procedure_Return
+            End
+            
+            If (bPromptNone) Begin
+                // Check is logged in, not logged in = error
+                If (not(bUserLoggedIn)) Begin
+                    Send ErrorRedirect C_OIDC_ERR_LOGIN_REQUIRED C_OIDC_ERR_DESC_LOGIN_REQUIRED
+                    Procedure_Return
+                End
+            
+                // Check consent, no consent = error
+                Get ValidateConsent of hoOidcProvider tClient asScopes to bOk
+                If (not(bOk)) Begin
+                    Send ErrorRedirect C_OIDC_ERR_CONSENT_REQUIRED C_OIDC_ERR_DESC_CONSENT_REQUIRED
+                    Procedure_Return
+                End
+            
+                // Take current session account as selected account
+            End
+            Else Begin
+                // If prompt contains Login we force a login or when max age is expired
+                Get OidcSpaceSeparatedStringContains sPrompt C_OIDC_PROMPT_LOGIN          to bLoginRequired
+                Move (bLoginRequired or bMaxAgeExpired)                                   to bLoginRequired
+                Get OidcSpaceSeparatedStringContains sPrompt C_OIDC_PROMPT_CONSENT        to bConsentRequired
+                Get OidcSpaceSeparatedStringContains sPrompt C_OIDC_PROMPT_SELECT_ACCOUNT to bSelectAccountRequired
+            End
+            
+            If (bLoginRequired) Begin
+                Send LoginRedirect
+                Procedure_Return
+            End
+            
+            If (bConsentRequired) Begin
+                // Always ask for consent
+                If (not(bUserLoggedIn) or bMaxAgeExpired) Begin
+                    Send LoginRedirect
+                    Procedure_Return
+                End
+
+                Send ConsentRedirect
+                Procedure_Return
+            End
+            
+            If (bSelectAccountRequired) Begin
+                // ToDo: determine what we do here :D
+            End
+        End
+        Else Begin
+            // Default flow: 1) Check existing authentication (show login page if not authenticated)
+            //               2) Check for consent (existing in backend or show consent screen) 
+            //               3) Check for account selection (for no prompt the server can select the current session account by default)
+            If (not(bUserLoggedIn) or bMaxAgeExpired) Begin
+                Send LoginRedirect
+                Procedure_Return
+            End
+            
+            // Check for consent
+            Get ValidateConsent of hoOidcProvider tClient asScopes to bOk
+            
+            If (not(bOk)) Begin
+                Send ConsentRedirect
+                Procedure_Return
+            End
+            
+            // Log implicit consent
+            Move sClientId                      to tConsent.sClientId
+            Move sUserId                        to tConsent.sSubId
+            Move C_OIDC_CONSENT_ACTION_IMPLICIT to tConsent.sAction
+            Move sScope                         to tConsent.sScopes
+            Move (CurrentDateTime())            to tConsent.dtPerformedAt
+            Move sUserId                        to tConsent.sPerformedBy
+            
+            Send OnSaveConsentAudit of hoOidcProvider tConsent
+        End
+        
+        // All checks are over, user is logged in and has consented to the requested scope
+        // Now we generate an authorization code
+        Send OnCreateAuthCode of hoOidcProvider (&sAuthCode)
+        // Auth code must be unique     
+        Move (StrJoinFromArray(asScopes, C_OIDC_CHARACTER_SPACE)) to sScope
+        Send OnAuthorize of hoOidcProvider sAuthCode sClientId sUserId sRedirectUri sScope sCodeChallenge sCodeChallengeMethod sNonce (StrJoinFromArray(pasScopes(Self), C_OIDC_CHARACTER_SPACE) <> psOriginalScope(Self))
+        
+        // Send them back to the redirect URI with the authorization code
+        Send AuthCodeRedirect sAuthCode
+    End_Procedure
+
+    Procedure HandleTokenEndpoint
+        String sGrantType sClientId
+        Boolean bExists
+        
+        // First check is grant_type, this version of the library only supports authorization_code and refresh_token
+        Get RequestParameter C_OIDC_PARAM_GRANT_TYPE (&bExists) to sGrantType
+        If (not(bExists)) Begin
+            Send SendInvalidRequestJson
+            Procedure_Return
+        End
+        
+        Case Begin
+            Case (sGrantType = C_OIDC_GRANT_TYPE_REFRESH_TOKEN)
+                Send HandleRefreshTokenGrant
+                Case Break
+                
+            Case (sGrantType = C_OIDC_GRANT_TYPE_AUTH_CODE)
+                Send HandleAuthorizationCodeGrant
+                Case Break
+               
+            Case (sGrantType = C_OIDC_GRANT_TYPE_CLIENT_CREDENTIALS)
+                Send HandleClientCredentialsGrant
+                Case Break
+
+            Case Else
+                Send SendErrorJson C_OIDC_ERR_UNSUPPORTED_GRANT_TYPE C_OIDC_ERR_DESC_UNSUPPORTED_GRANT_TYPE True
+                Procedure_Return
+        Case End
+    End_Procedure
+    
+    Procedure HandleAuthorizationCodeGrant
+        Handle hoOidcProvider
+        String sAuthCode sRedirectUri sRequestedScope sScope sCodeVerifier
+        Boolean bExists bValidatePkce bOk
+        tOidcClient tClient
+        tOidcAuthorizationCodeInfo tCode
+        tOidcUserInfo tUserInfo
+        String[] asOriginalScopes asAuthorizedScopes asRequestedScopes asAllowedScopes
+        Integer iRetVal
+        String sIdToken sAccessToken sRefreshToken
+        UBigInt ubiExpiresAt
+        
+        Get ProviderHandle to hoOidcProvider
+        If (hoOidcProvider = 0) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_INTERNAL_SERVER_ERROR C_OIDC_RESPONSE_REASON_INTERNAL_SERVER_ERROR
+            Send SendErrorJson C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR False
+            Procedure_Return
+        End
+        
+        // code
+        Get RequestParameter C_OIDC_PARAM_CODE (&bExists) to sAuthCode
+        If (not(bExists)) Begin
+            Send SendErrorJson C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST True
+            Procedure_Return
+        End
+        
+        // redirect_uri
+        Get RequestParameter C_OIDC_PARAM_REDIRECT_URI (&bExists) to sRedirectUri
+        If (not(bExists)) Begin
+            Send SendErrorJson C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST True
+            Procedure_Return
+        End
+        
+        Get AuthenticateClient (&tClient) True (&bValidatePkce) to bOk
+        
+        // If bOk is false the returned html/json is handled by the AuthenticateClient function
+        If (not(bOk)) ;
+            Procedure_Return
+        
+        Send OnGetAuthCodeInfo of hoOidcProvider sAuthCode (&tCode)
+        
+        // Set ptUserInfo.Sub for logging purposes
+        Send OnGetUserInfo of hoOidcProvider tCode.sUserId (&tUserInfo)
+        Set ptUserInfo to tUserInfo
+        
+        If (tCode.sAuthCode <> sAuthCode) Begin
+            Send SendErrorJson C_OIDC_ERR_INVALID_GRANT C_OIDC_ERR_DESC_INVALID_GRANT True
+            Procedure_Return
+        End
+
+        // Check if authorization code is still valid/not expired
+        Move False to Err
+        Get ValidateAuthCode tClient.sClientId sRedirectUri tCode to bOk
+        // If we got an error here we had an issue with our handle
+        If (Err) Begin
+            Send SendErrorJson C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR True
+            Procedure_Return
+        End
+        
+        If (not(bOk)) Begin
+            Send SendErrorJson C_OIDC_ERR_INVALID_GRANT C_OIDC_ERR_DESC_INVALID_GRANT True
+            Procedure_Return
+        End
+        
+        Move (StrSplitToArray(tCode.sScope, C_OIDC_CHARACTER_SPACE)) to asOriginalScopes
+        Set psOriginalScope to tCode.sScope
+        Set pbScopeChanged  to tCode.bScopeChanged
+        
+        If (bValidatePkce) Begin
+            Get RequestParameter C_OIDC_PARAM_CODE_VERIFIER (&bExists) to sCodeVerifier
+            // Validate the code_verifier to be the same as tCode.sCodeChallenge by using the same tCode.sCodeChallengeMethod
+            Get ValidatePkce sCodeVerifier tCode to bOk
+            If (not(bOk)) Begin
+                // Consume auth code and throw error
+                Send OnConsumeAuthCode of hoOidcProvider sAuthCode
+                Send SendErrorJson C_OIDC_ERR_INVALID_GRANT C_OIDC_ERR_DESC_INVALID_CODE_VERIFIER True
+                Procedure_Return
+            End
+        End
+        
+        // Legit authorization code + pkce (if present/needed)
+        // Get the scopes parameter
+        Get RequestParameter C_OIDC_PARAM_SCOPE (&bExists) to sRequestedScope
+        If (bExists) Begin
+            Move (StrSplitToArray(sRequestedScope, C_OIDC_CHARACTER_SPACE)) to asRequestedScopes
+            Get OidcIntersectStringArray asRequestedScopes asOriginalScopes to asRequestedScopes
+        End
+        Else Begin
+            Move asOriginalScopes to asRequestedScopes
+        End
+        
+        Send OnGetUserAuthorizedScopes of hoOidcProvider tCode.sUserId tCode.sClientId (&asAuthorizedScopes)
+        Get OidcIntersectStringArray asRequestedScopes asAuthorizedScopes to asAllowedScopes
+        Set pasScopes to asAllowedScopes
+        Move (StrJoinFromArray(asAllowedScopes, C_OIDC_CHARACTER_SPACE)) to sScope
+        
+        Get GenerateTokensAuthCode of hoOidcProvider tCode (&sIdToken) (&sAccessToken) (&sRefreshToken) (&ubiExpiresAt) sScope to iRetVal
+        
+        If (iRetVal = C_OIDC_GENERATE_TOKENS_INVALID_SCOPE) Begin
+            // Consume auth code and throw error
+            Send OnConsumeAuthCode of hoOidcProvider sAuthCode
+        End
+        
+        If (iRetVal) Begin
+            // Error handling
+            Send GenerateTokensErrorHandling iRetVal
+            Procedure_Return
+        End
+        
+        // Generate token response
+        Send SendTokenJson sAccessToken ubiExpiresAt sRefreshToken sIdToken
+    End_Procedure
+    
+    Procedure HandleRefreshTokenGrant
+        Handle hoOidcProvider
+        String sRefreshToken sReqScopes sIdToken sAccessToken
+        Boolean bExists bOk
+        tOidcClient tClient
+        tOidcRefreshToken tRefreshToken
+        tOidcUserInfo tUserInfo
+        String[] asOriginalScopes asReqScopes asScopes
+        Integer iSearchIndex iRetVal
+        UBigInt ubiExpiresAt
+        tOidcJsonWebToken tToken
+        
+        Get ProviderHandle to hoOidcProvider
+        
+        If (hoOidcProvider = 0) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_INTERNAL_SERVER_ERROR C_OIDC_RESPONSE_REASON_INTERNAL_SERVER_ERROR
+            Send SendErrorJson C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR False
+            Procedure_Return
+        End
+        
+        // Check if we have a refresh token
+        Get RequestParameter C_OIDC_PARAM_REFRESH_TOKEN (&bExists) to sRefreshToken
+        If (not(bExists)) Begin
+            Send SendErrorJson C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST True
+            Procedure_Return
+        End
+        
+        Get AuthenticateClient (&tClient) False to bOk
+        // If bOk is false the return is handled by the AuthenticateClient function
+        If (not(bOk)) ;
+            Procedure_Return
+        
+        Send OnValidateToken of hoOidcProvider sRefreshToken (&bOk) (&tToken)
+        
+        // Set ptUserInfo for logging purposes
+        Send OnGetUserInfo of hoOidcProvider tToken.sSubject (&tUserInfo)
+        Set ptUserInfo to tUserInfo
+        
+        If (not(bOk)) Begin
+            Send SendErrorJson C_OIDC_ERR_INVALID_GRANT C_OIDC_ERR_DESC_INVALID_GRANT True
+            Procedure_Return
+        End
+        
+        // Check for offline_access scope (if not there, a refresh is not allowed)
+        Move (StrSplitToArray(tToken.sScope, C_OIDC_CHARACTER_SPACE)) to asOriginalScopes
+        Move (SearchArray(C_OIDC_SCOPE_OFFLINE_ACCESS, asOriginalScopes)) to iSearchIndex
+        If (iSearchIndex = -1) Begin
+            Send SendErrorJson C_OIDC_ERR_INVALID_GRANT C_OIDC_ERR_DESC_INVALID_GRANT True
+            Procedure_Return
+        End
+        
+        // Get refresh token info
+        Send OnGetRefreshTokenInfo of hoOidcProvider tToken.sJTI (&tRefreshToken)
+        // Check if its the right client
+        If (tRefreshToken.sClientId <> tClient.sClientId) Begin
+            Send SendErrorJson C_OIDC_ERR_INVALID_GRANT C_OIDC_ERR_DESC_INVALID_GRANT True
+            Procedure_Return
+        End
+        
+        // Check if token wasn't revoked/used yet
+        If (tRefreshToken.bUsed or tRefreshToken.bRevoked) Begin
+            // Invalidate token family
+            Send OnTokenFamilyRevocation of hoOidcProvider tToken.sJTI
+            
+            // Invalid grant
+            Send SendErrorJson C_OIDC_ERR_INVALID_GRANT C_OIDC_ERR_DESC_INVALID_GRANT True
+            Procedure_Return
+        End
+        
+        // check for scope parameter
+        Get RequestParameter C_OIDC_PARAM_SCOPE (&bExists) to sReqScopes
+        
+        // If it exists we need to check it's only a subset of the original requested scope
+        If (bExists) Begin
+            Move (StrSplitToArray(sReqScopes, C_OIDC_CHARACTER_SPACE)) to asReqScopes
+            Get OidcIntersectStringArray asReqScopes asOriginalScopes to asScopes
+        End
+        Else Begin
+            Move asOriginalScopes to asScopes
+        End
+
+        Get GenerateTokensRefreshCode of hoOidcProvider tRefreshToken asScopes            ;
+                                                        (&sIdToken) (&sAccessToken)       ;
+                                                        (&sRefreshToken) (&ubiExpiresAt) to iRetVal
+        
+        If (iRetVal) Begin
+            Send GenerateTokensErrorHandling iRetVal
+            Procedure_Return
+        End
+        
+        // Consume the old token
+        Send OnConsumeRefreshCode of hoOidcProvider tToken.sJTI
+        
+        // Generate token response
+        Send SendTokenJson sAccessToken ubiExpiresAt sRefreshToken sIdToken
+    End_Procedure
+    
+    Procedure HandleClientCredentialsGrant
+        Handle hoOidcProvider
+        String sClientId sClientSecret sScopes sAccessToken
+        UBigInt ubiExpiresAt
+        Boolean bOk bExists
+        tOidcClient tClient
+        String[] asScopes
+        Integer iRetVal
+        
+        Get ProviderHandle to hoOidcProvider
+        
+        If (hoOidcProvider = 0) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_INTERNAL_SERVER_ERROR C_OIDC_RESPONSE_REASON_INTERNAL_SERVER_ERROR
+            Send SendErrorJson C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR False
+            Procedure_Return
+        End
+        
+        // AuthenticateClient will check Authorization header and Body params (Only one may exist otherwise theres duplicate parameters)
+        Get AuthenticateClient (&tClient) False to bOk
+        
+        If (not(bOk)) ;
+            Procedure_Return
+            
+        If (tClient.sClientType = C_OIDC_CLIENT_TYPE_PUBLIC) Begin
+            // Only Confidential clients may use the client_credentials grant
+            Send SendErrorJson C_OIDC_ERR_UNAUTHORIZED_CLIENT C_OIDC_ERR_DESC_UNAUTHORIZED_CLIENT True
+            Procedure_Return
+        End
+        
+        Get RequestParameter C_OIDC_PARAM_SCOPE (&bExists) to sScopes
+        If (bExists) Begin
+           Move (StrSplitToArray(sScopes, C_OIDC_CHARACTER_SPACE)) to asScopes
+        End
+        Else Begin
+            // Get Default scopes
+            Send OnGetDefaultClientScopes of hoOidcProvider tClient.sClientId (&asScopes)
+        End
+        
+        Get GenerateTokensClientCredentials of hoOidcProvider tClient asScopes (&sAccessToken) (&ubiExpiresAt) to iRetVal
+        
+        If (iRetVal) Begin
+            Send GenerateTokensErrorHandling iRetVal
+            Procedure_Return
+        End
+        
+        // Generate token response
+        Send SendTokenJson sAccessToken ubiExpiresAt
+    End_Procedure
+    
+    Procedure GenerateTokensErrorHandling Integer iRetVal
+        Case Begin
+            Case (iRetVal = C_OIDC_GENERATE_TOKENS_SERVER_ERROR)
+                Send SendErrorJson C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR True
+                Procedure_Return
+                Case Break
+            
+            Case (iRetVal = C_OIDC_GENERATE_TOKENS_INVALID_SCOPE)
+                Send SendErrorJson C_OIDC_ERR_INVALID_SCOPE C_OIDC_ERR_DESC_INVALID_SCOPE True
+                Procedure_Return
+                Case Break
+                
+            Case Else
+                // Unknown error
+                Send SendErrorJson C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR True
+                Procedure_Return
+        Case End
+    End_Procedure
+    
+    // Revokes tokens (clients must authenticate if possible)
+    Procedure HandleRevocation
+        Handle hoOidcProvider
+        String sToken
+        Boolean bExists bOk
+        tOidcClient tClient
+        tOidcUserInfo tUserInfo
+        tOidcJsonWebToken tToken
+        
+        Get ProviderHandle to hoOidcProvider
+        
+        If (hoOidcProvider = 0) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_INTERNAL_SERVER_ERROR C_OIDC_RESPONSE_REASON_INTERNAL_SERVER_ERROR
+            Send SendErrorJson C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR False
+            Procedure_Return
+        End
+        
+        // Check if we have a token
+        Get RequestParameter C_OIDC_PARAM_TOKEN (&bExists) to sToken
+        If (not(bExists)) Begin
+            Send SendErrorJson C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST True
+            Procedure_Return
+        End
+        
+        Get AuthenticateClient (&tClient) False to bOk
+        // If bOk is false the return is handled by the AuthenticateClient function
+        If (not(bOk)) ;
+            Procedure_Return
+            
+        Send OnValidateToken of hoOidcProvider sToken (&bOk) (&tToken)
+        
+        // Set ptUserInfo for logging purposes
+        Send OnGetUserInfo of hoOidcProvider tToken.sSubject (&tUserInfo)
+        Set ptUserInfo to tUserInfo
+        
+        // Don't give information, just return 200
+        If (not(bOk)) Begin
+            Send OutputString "{}"
+            Procedure_Return
+        End
+        
+        Send OnTokenRevocation of hoOidcProvider tToken.sJTI
+        
+        // Return 200 even if an error occurred (empty json)
+        Send OutputString "{}"
+    End_Procedure
+    
+    Procedure HandleUserInfo
+        Handle hoOidcProvider
+        Boolean bOk
+        String sUserId sClientId sScopes sJson
+        String[] asScopes asAllowedClaims
+        tNameValuePair[] atClaims atAllowedClaims
+        Handle hoJson
+        Integer iIndex iIndexTo iJsonType
+        tOidcUserInfo tUserInfo
+        tOidcClient tClient
+        tOidcScopeClaimsMap[] atScopeClaimsMap
+        
+        Get ProviderHandle to hoOidcProvider
+        
+        If (hoOidcProvider = 0) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_INTERNAL_SERVER_ERROR C_OIDC_RESPONSE_REASON_INTERNAL_SERVER_ERROR
+            Send SendErrorJson C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR
+            Procedure_Return
+        End
+        
+        Get AuthenticateAccessToken (&sUserId) (&sClientId) (&sScopes) to bOk
+        
+        // Set ptUserInfo for logging purposes
+        Send OnGetUserInfo of hoOidcProvider sUserId (&tUserInfo)
+        Set ptUserInfo to tUserInfo
+        
+        // Set ptClient for logging purposes
+        Send OnGetClientInfo of hoOidcProvider sClientId (&tClient)
+        Set ptClient to tClient
+        
+        If (not(bOk)) ;
+            Procedure_Return
+        
+        // Resolve the claims with the scopes from the access token
+        Move (StrSplitToArray(sScopes, C_OIDC_CHARACTER_SPACE)) to asScopes
+        Send OnResolveScopesToClaims of hoOidcProvider sUserId sClientId asScopes (&atClaims)
+        Send OnGetScopeToClaimsMap of hoOidcProvider (&atScopeClaimsMap)
+        
+        Move (SizeOfArray(asScopes) - 1) to iIndexTo        
+        For iIndex from 0 to iIndexTo
+            // OpenId scope shouldn't add claims to the userinfo
+            If (asScopes[iIndex] <> C_OIDC_SCOPE_OPENID) Begin
+                Send OnGetClaimsForScope of hoOidcProvider atScopeClaimsMap asScopes[iIndex] (&asAllowedClaims)
+            End
+        Loop
+        
+        // Always allow sub in userinfo
+        Move C_OIDC_CLAIM_SUBJECT to atAllowedClaims[-1].sName
+        
+        Move (SizeOfArray(asAllowedClaims) - 1) to iIndexTo
+        For iIndex from 0 to iIndexTo
+            Move asAllowedClaims[iIndex] to atAllowedClaims[-1].sName
+        Loop
+
+        Get OidcRemoveNvpSubset atClaims atAllowedClaims True to atClaims 
+        
+        Get Create (RefClass(cJsonObject)) to hoJson
+        Send InitializeJsonType of hoJson jsonTypeObject
+        
+        Move (SizeOfArray(atClaims) - 1) to iIndexTo
+        For iIndex from 0 to iIndexTo
+            Send OnGetClaimJsonType of hoOidcProvider atClaims[iIndex].sName (&iJsonType)
+            
+            If (SizeOfString(atClaims[iIndex].sValue) > 0) Begin
+                If (iJsonType = jsonTypeBoolean) Begin // Conversion
+                    Move (If(Lowercase(atClaims[iIndex].sValue) = "true", "1", "0")) to atClaims[iIndex].sValue
+                End
+                
+                Send SetMemberValue of hoJson atClaims[iIndex].sName iJsonType atClaims[iIndex].sValue
+            End
+        Loop
+        
+        Get Stringify of hoJson to sJson
+        Send Destroy of hoJson
+        Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_CONTENT_TYPE C_OIDC_CONTENT_TYPE_APPLICATION_JSON
+        Send OutputString sJson
+    End_Procedure
+    
+    Procedure HandleIntrospect
+        Boolean bExists bOk
+        String sToken sJson
+        Handle hoJson hoOidcProvider
+        tOidcClient tClient
+        tOidcJsonWebToken tToken
+        
+        Get ProviderHandle to hoOidcProvider
+        If (hoOidcProvider = 0) Begin
+            Procedure_Return // ProviderHandle throws an error if it's 0, so we can simply return
+        End
+        
+        // Client authentication
+        Get AuthenticateClient (&tClient) False to bOk
+        
+        If (not(bOk)) ;
+            Procedure_Return // Error handling done by AuthenticateClient
+            
+        // Reset bOk
+        Move False to bOk
+        
+        Get RequestParameter C_OIDC_PARAM_TOKEN (&bExists) to sToken
+        If (bExists) Begin
+            Send OnValidateToken of hoOidcProvider sToken (&bOk) (&tToken)
+        End
+        
+        Get Create (RefClass(cJsonObject)) to hoJson
+        Send InitializeJsonType of hoJson jsonTypeObject
+        
+        If (bOk) Begin
+            Send SetMemberValue of hoJson C_OIDC_INTROSPECT_ACTIVE jsonTypeBoolean True
+            
+            If (SizeOfString(tToken.sScope) > 0) Begin
+                Send SetMemberValue of hoJson C_OIDC_PARAM_SCOPE jsonTypeString tToken.sScope
+            End
+            If (SizeOfString(tToken.sClientId) > 0) Begin
+                Send SetMemberValue of hoJson C_OIDC_PARAM_CLIENT_ID jsonTypeString tToken.sClientId
+            End
+            If (SizeOfString(tToken.sUsername) > 0) Begin
+                Send SetMemberValue of hoJson C_OIDC_PARAM_USERNAME jsonTypeString tToken.sUsername
+            End
+            If (tToken.ubiExp > 0) Begin
+                Send SetMemberValue of hoJson C_OIDC_CLAIM_EXPIRY jsonTypeInteger tToken.ubiExp
+            End
+            If (tToken.ubiIat > 0) Begin
+                Send SetMemberValue of hoJson C_OIDC_CLAIM_ISSUED_AT jsonTypeInteger tToken.ubiIat
+            End
+            If (tToken.ubiNbf > 0) Begin
+                Send SetMemberValue of hoJson C_OIDC_CLAIM_NOT_BEFORE jsonTypeInteger tToken.ubiNbf
+            End
+            If (SizeOfString(tToken.sSubject) > 0) Begin
+                Send SetMemberValue of hoJson C_OIDC_CLAIM_SUBJECT jsonTypeString tToken.sSubject
+            End
+            If (SizeOfString(tToken.sAudience) > 0) Begin
+                Send SetMemberValue of hoJson C_OIDC_CLAIM_AUDIENCE jsonTypeString tToken.sAudience
+            End
+            If (SizeOfString(tToken.sIssuer) > 0) Begin
+                Send SetMemberValue of hoJson C_OIDC_CLAIM_ISSUER jsonTypeString tToken.sIssuer
+            End
+            If (SizeOfString(tToken.sJTI) > 0) Begin
+                Send SetMemberValue of hoJson C_OIDC_CLAIM_JTI jsonTypeString tToken.sJTI
+            End
+        End
+        Else Begin
+            Send SetMemberValue of hoJson C_OIDC_INTROSPECT_ACTIVE jsonTypeBoolean False
+        End
+        
+        Get Stringify of hoJson to sJson
+        Send Destroy of hoJson
+        
+        Send AddHttpResponseHeader "Content-Type" "application/json"
+        Send OutputString sJson
+    End_Procedure
+    
+    Function AuthenticateClient tOidcClient ByRef tClient Boolean bCodeVerifierRequired Boolean ByRef bOptValidatePkce Returns Boolean
+        Handle hoOidcProvider
+        String sClientIdBody sClientSecretBody sClientId sClientSecret sCodeVerifier
+        Boolean bClientIdExists bClientSecretExists bBasicAuth bValidatePkce 
+        Boolean bCodeVerifierExists bShouldUpgrade bOk
+        
+        Get ProviderHandle to hoOidcProvider
+        If (hoOidcProvider = 0) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_INTERNAL_SERVER_ERROR C_OIDC_RESPONSE_REASON_INTERNAL_SERVER_ERROR
+            Send SendErrorJson C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR False
+            Function_Return False
+        End
+        
+        // Always parse body client_id / client_secret
+        // client_id
+        Get RequestParameter C_OIDC_PARAM_CLIENT_ID (&bClientIdExists) to sClientIdBody
+        
+        // client_secret
+        Get RequestParameter C_OIDC_PARAM_CLIENT_SECRET (&bClientSecretExists) to sClientSecretBody
+        
+        // Parse Basic Auth
+        Get ParseBasicAuthCredentials (&sClientId) (&sClientSecret) to bBasicAuth
+        
+        // Get Code_verifier
+        Get RequestParameter C_OIDC_PARAM_CODE_VERIFIER (&bCodeVerifierExists) to sCodeVerifier
+        
+        // BOTH Basic AND body-based authentication -> invalid_request
+        If ((bBasicAuth and bClientIdExists) or (bBasicAuth and bClientSecretExists)) Begin
+            Send SendErrorJson C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_INVALID_REQUEST True
+            Function_Return False
+        End
+        
+        // NO Authentication, we need client_id as minimum
+        If (not(bBasicAuth) and not(bClientIdExists)) Begin
+            Send SendErrorJson C_OIDC_ERR_INVALID_CLIENT C_OIDC_ERR_DESC_INVALID_CLIENT True
+            Function_Return False
+        End
+        
+        // Set client id and secret
+        If (not(bBasicAuth)) Begin
+            Move sClientIdBody      to sClientId
+            Move sClientSecretBody  to sClientSecret
+        End
+        
+        // Get ClientInfo
+        Send OnGetClientInfo of hoOidcProvider sClientId (&tClient)
+        
+        // Set ptClient before checks, this will be used for the audit log
+        Set ptClient to tClient
+        If (tClient.sClientId <> sClientId) ;
+            Move sClientId to tClient.sClientId // For logging purposes
+        
+        If (tClient.sClientType = C_OIDC_CLIENT_TYPE_PUBLIC) Begin
+            // Public clients need to do PKCE
+            If (bCodeVerifierRequired and not(bCodeVerifierExists)) Begin
+                Send SendErrorJson C_OIDC_ERR_INVALID_GRANT C_OIDC_ERR_DESC_MISSING_CODE_VERIFIER True
+                Function_Return False
+            End
+            
+            If (num_arguments > 2) Begin
+                Move True to bOptValidatePkce
+            End
+            
+            // Impossible to keep the secret from a public client secret
+            If (bBasicAuth) Begin
+                Send SendErrorJson C_OIDC_ERR_INVALID_CLIENT C_OIDC_ERR_DESC_INVALID_CLIENT True
+                Function_Return False          
+            End
+        End
+        Else Begin
+            // Authenticate using secret
+            Send OnValidateClientSecret of hoOidcProvider sClientId sClientSecret (&bShouldUpgrade) (&bOk)
+            If (bShouldUpgrade) Begin
+                // Authentication failed (Secret needs upgrade, but don't reveal the client exists)
+                Send SetResponseStatus C_OIDC_RESPONSE_STATUS_UNAUTHORIZED C_OIDC_RESPONSE_REASON_UNAUTHORIZED
+                Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_WWW_AUTHENTICATE C_OIDC_HTTP_HEADER_VALUE_WWW_AUTH_BASIC
+                Send SendErrorJson C_OIDC_ERR_INVALID_CLIENT C_OIDC_ERR_DESC_INVALID_CLIENT False
+                Function_Return False
+            End
+            
+            If (not(bOk)) Begin
+                // Authentication failed
+                Send SetResponseStatus C_OIDC_RESPONSE_STATUS_UNAUTHORIZED C_OIDC_RESPONSE_REASON_UNAUTHORIZED
+                Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_WWW_AUTHENTICATE C_OIDC_HTTP_HEADER_VALUE_WWW_AUTH_BASIC
+                Send SendErrorJson C_OIDC_ERR_INVALID_CLIENT C_OIDC_ERR_DESC_INVALID_CLIENT False
+                Function_Return False
+            End
+            
+            If (bCodeVerifierExists) Begin
+                // Check for possible PKCE (Extra security, it is allowed according to the spec)
+                If (num_arguments > 2) Begin
+                    Move True to bOptValidatePkce
+                End
+            End
+        End
+        
+        Function_Return True
+    End_Function
+    
+    Function AuthenticateAccessToken String ByRef sUserId String ByRef sClientId String ByRef sScopes Returns Boolean
+        Handle hoOidcProvider
+        String sToken sParamToken sHeaderValue
+        Boolean bBearerAuth bExists bOk
+        tOidcJsonWebToken tToken
+        
+        Get ProviderHandle to hoOidcProvider
+        If (hoOidcProvider = 0) Begin
+            // Error response
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_INTERNAL_SERVER_ERROR C_OIDC_RESPONSE_REASON_INTERNAL_SERVER_ERROR
+            Send SendErrorJson C_OIDC_ERR_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR
+            Function_Return False
+        End
+        
+        // Get the token from either the authorization header or the body
+        Get ParseBearerAuthCredentials (&sToken) to bBearerAuth
+        
+        Get RequestParameter C_OIDC_PARAM_ACCESS_TOKEN (&bExists) to sParamToken
+        
+        // Check if we don't have multiple ways of passing the token
+        If (bBearerAuth and bExists) Begin
+            Move (SFormat(C_OIDC_HTTP_HEADER_VALUE_WWW_AUTH_BEARER_CUSTOM, C_OIDC_ERR_INVALID_REQUEST, C_OIDC_ERR_DESC_MULTIPLE_ACCESS_TOKENS_PROVIDED)) to sHeaderValue
+            Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_WWW_AUTHENTICATE sHeaderValue
+            Send SendErrorJson C_OIDC_ERR_INVALID_REQUEST C_OIDC_ERR_DESC_MULTIPLE_ACCESS_TOKENS_PROVIDED True
+            Function_Return False
+        End
+        
+        If (not(bBearerAuth)) Begin
+            Move sParamToken to sToken
+        End
+        
+        Send OnValidateToken of hoOidcProvider sToken (&bOk) (&tToken)
+        
+        If (not(bOk)) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_UNAUTHORIZED C_OIDC_RESPONSE_REASON_UNAUTHORIZED
+            Move (SFormat(C_OIDC_HTTP_HEADER_VALUE_WWW_AUTH_BEARER, C_OIDC_ERR_DESC_INVALID_TOKEN)) to sHeaderValue
+            Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_WWW_AUTHENTICATE sHeaderValue
+            Send SendErrorJson C_OIDC_ERR_INVALID_TOKEN C_OIDC_ERR_DESC_INVALID_TOKEN False
+            Function_Return False
+        End
+        // Valid token
+        Move tToken.sSubject    to sUserId
+        Move tToken.sClientId   to sClientId
+        Move tToken.sScope      to sScopes
+        
+        // Check if scopes include "openid", if not it is invalid
+        If (not(OidcSpaceSeparatedStringContains(sScopes, C_OIDC_SCOPE_OPENID))) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_UNAUTHORIZED C_OIDC_RESPONSE_REASON_UNAUTHORIZED
+            Move (SFormat(C_OIDC_HTTP_HEADER_VALUE_WWW_AUTH_BEARER, C_OIDC_ERR_DESC_INSUFFICIENT_SCOPE)) to sHeaderValue
+            Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_WWW_AUTHENTICATE sHeaderValue
+            Send SendErrorJson C_OIDC_ERR_INVALID_TOKEN C_OIDC_ERR_DESC_INSUFFICIENT_SCOPE False
+            Function_Return False
+        End
+        
+        Function_Return True
+    End_Function
+    
+    Function ParseFormUrlEncodedBody String sBody Boolean ByRef bHasDuplicates Returns tNameValuePair[]
+        String[] aPairs
+        Integer iIndex iEqualPos iSearchIndex
+        String sPair sKey sVal
+        tNameValuePair[] atParams
+        tNameValuePair tSearch
+    
+        // Reset duplicate flag
+        Move False to bHasDuplicates
+    
+        // Split at "&"
+        Move (StrSplitToArray(sBody, "&")) to aPairs
+    
+        For iIndex from 0 to (SizeOfArray(aPairs) - 1)
+            Move aPairs[iIndex] to sPair
+    
+            Move "" to sKey
+            Move "" to sVal
+    
+            // Find first "=" separator
+            Move (Pos("=", sPair)) to iEqualPos
+    
+            If (iEqualPos > 0) Begin
+                // Extract: key=value
+                Move (Left(sPair, iEqualPos - 1))                           to sKey
+                Move (Mid(sPair, (Length(sPair) - iEqualPos), iEqualPos+1)) to sVal
+            End
+            Else Begin
+                // No "=", whole segment is key
+                Move sPair to sKey
+            End
+            
+            // URL decode name & value
+            Get UrlDecode sKey to sKey
+            Get UrlDecode sVal to sVal
+            
+            // For scope, prompt, acr_values, claims_locales and ui_locales we need to replace "+" with " "
+            If (sKey = C_OIDC_PARAM_SCOPE or sKey = C_OIDC_PARAM_PROMPT or sKey = C_OIDC_PARAM_ACR_VALUES or sKey = C_OIDC_PARAM_CLAIMS_LOCALES or sKey = C_OIDC_PARAM_UI_LOCALES) Begin
+                Move (Replaces("+", sVal, C_OIDC_CHARACTER_SPACE)) to sVal
+            End
+            
+            // Lowercase variable names (Everything is lowercase in OAuth 2.0 spec)
+            // This way we can check for duplicates in a case-insensitive matter
+            Move (Lowercase(sKey)) to sKey
+    
+            // Check for duplicate parameter names (case-insensitive)
+            Move sKey to tSearch.sName
+            Move sVal to tSearch.sValue
+            Move (SearchArray(tSearch, atParams)) to iSearchIndex
+            If (iSearchIndex <> - 1) Begin
+                Move True to bHasDuplicates
+            End
+            Else Begin
+                // Add struct to array
+                Move tSearch to atParams[-1]
+            End
+        Loop
+    
+        Function_Return atParams
+    End_Function
+    
+    Function RequestParameter String sParam Boolean ByRef bOptExists Returns String
+        String sVerb sValue
+        Boolean bInternalExists
+        
+        If (num_arguments > 1) Begin
+            Move False to bOptExists
+        End
+        
+        Get psRequestVerb to sVerb
+        If (sVerb = C_OIDC_VERB_GET) Begin
+            Get UrlParameterWithExists sParam (&bInternalExists) to sValue
+            If (sParam = C_OIDC_PARAM_SCOPE or sParam = C_OIDC_PARAM_PROMPT or sParam = C_OIDC_PARAM_ACR_VALUES or sParam = C_OIDC_PARAM_CLAIMS_LOCALES or sParam = C_OIDC_PARAM_UI_LOCALES) Begin
+                Move (Replaces("+", sValue, C_OIDC_CHARACTER_SPACE)) to sValue
+            End
+        End
+        Else If (sVerb = C_OIDC_VERB_POST) Begin
+            Get FormUrlEncodedBodyParam sParam (&bInternalExists) to sValue
+        End
+
+        If (num_arguments > 1) Begin
+            Move bInternalExists to bOptExists
+        End
+        
+        Function_Return sValue
+    End_Function
+    
+    { Visibility=Private }
+    Function UrlParameterWithExists String sName Boolean ByRef bOptExists Returns String
+        String sValue
+        
+        If (num_arguments > 1) Begin
+            Move False to bOptExists
+        End
+        
+        Get UrlParameter sName to sValue
+        
+        If (SizeOfString(sValue) > 0 and num_arguments > 1) Begin
+            Move True to bOptExists
+        End
+        
+        Function_Return sValue
+    End_Function
+    
+    { Visibility=Private }
+    Function FormUrlEncodedBodyParam String sParam Boolean ByRef bOptExists Returns String
+        tNameValuePair[] atParams
+        tNameValuePair tSearch
+        Integer iSearchIndex
+        String sResult
+        
+        If (num_arguments > 1) Begin
+            Move False to bOptExists
+        End
+        
+        Get patParams to atParams
+        
+        Move sParam to tSearch.sName
+        
+        Move (SearchArray(tSearch, atParams)) to iSearchIndex
+        If (iSearchIndex <> -1) Begin
+            Move atParams[iSearchIndex].sValue to sResult
+            
+            If (num_arguments > 1) Begin
+                Move True to bOptExists
+            End
+        End
+        
+        Function_Return sResult
+    End_Function
+    
+    Function ParseBasicAuthCredentials String ByRef sClientId String ByRef sClientSecret Returns Boolean
+        String sAuth sEncoded sDecoded
+        Integer iPos iLen
+        Boolean bHasBasicAuth bOk
+        Pointer pDecoded
+        UChar[] ucaBinary ucaDecoded
+    
+        // Retrieve the Authorization header
+        Get HttpRequestHeader "Authorization" to sAuth
+    
+        // No Authorization header -> no Basic Auth
+        If (sAuth = "") Begin
+            Function_Return False
+        End
+    
+        // Check if header starts with "Basic "
+        If (Lowercase(Left(sAuth, 6)) <> "basic ") Begin
+            Function_Return False
+        End
+    
+        // Extract the Base64 section
+        Move (Trim(Right(sAuth, Length(sAuth) - 6))) to sEncoded
+    
+        // Decode Base64
+        Move (StringToUCharArray(sEncoded)) to ucaBinary
+        Move 0 to ucaBinary[-1]
+        Move (Base64Decode(AddressOf(ucaBinary), &iLen)) to pDecoded
+        Move (ResizeArray(ucaDecoded, iLen)) to ucaDecoded
+        Move (MemCopy(AddressOf(ucaDecoded), pDecoded, iLen)) to bOk
+        
+        If (not(bOk)) Begin
+            Function_Return False // Memcopy failed
+        End
+        
+        Move (UCharArrayToString(ucaDecoded, iLen)) to sDecoded
+    
+        // Expected format: client_id:client_secret
+        Move (Pos(":", sDecoded)) to iPos
+        If (iPos = 0) Begin
+            Function_Return False // invalid format
+        End
+
+        Move (Left(sDecoded, iPos - 1))                     to sClientId
+        Move (Right(sDecoded,  Length(sDecoded) - iPos))    to sClientSecret
+    
+        Function_Return True
+    End_Function
+    
+    Function ParseBearerAuthCredentials String ByRef sToken Returns Boolean
+        String sAuth
+        Boolean bHasBasicAuth
+        UChar[] ucaBinary
+        Pointer pDecoded
+    
+        // Retrieve the Authorization header
+        Get HttpRequestHeader "Authorization" to sAuth
+    
+        // No Authorization header -> no Basic Auth
+        If (sAuth = "") Begin
+            Function_Return False
+        End
+    
+        // Check if header starts with "Bearer "
+        If (Lowercase(Left(sAuth, 7)) <> "bearer ") Begin
+            Function_Return False
+        End
+        
+        Move (Trim(Right(sAuth, Length(sAuth) - 7))) to sToken
+        
+        Function_Return True
+    End_Function
+    
+    Function ValidatePkce String sCodeVerifier tOidcAuthorizationCodeInfo tCode Returns Boolean
+        String sHash
+        
+        If (tCode.sCodeChallengeMethod <> C_OIDC_CODE_CHALLENGE_S256 and tCode.sCodeChallengeMethod <> C_OIDC_CODE_CHALLENGE_PLAIN) Begin
+            Error DFERR_PROGRAM "Wrong code_challenge_method for ValidatePkce in cOidcHandler.pkg"
+            Function_Return False
+        End
+        
+        If (tCode.sCodeChallengeMethod = C_OIDC_CODE_CHALLENGE_S256) Begin
+            Get Hash of oSha256 sCodeVerifier to sHash
+            Get OidcBase64EncodeString sHash to sHash
+            Send OidcBase64ToBase64Url (&sHash)
+        End
+        Else Begin
+            Move sCodeVerifier to sHash
+        End
+        
+        Function_Return (tCode.sCodeChallenge = sHash)
+    End_Function
+    
+    // Helper function to validate an authorization code
+    { Visibility=Private }
+    Function ValidateAuthCode String sClientId String sRedirectUri tOidcAuthorizationCodeInfo tCode Returns Boolean
+        Handle hoOidcProvider
+        Integer iExpiration iTotal
+        DateTime dtNow
+        TimeSpan tsDiff
+        Boolean bValid
+        
+        Get ProviderHandle to hoOidcProvider
+        // Trigger server error return
+        If (hoOidcProvider = 0) ;
+            Function_Return False
+        
+        Get piAuthCodeExpiration to iExpiration
+        
+        Move (CurrentDateTime()) to dtNow
+        Move (dtNow - tCode.dtCreatedAt) to tsDiff
+        Move (SpanTotalSeconds(tsDiff)) to iTotal
+        
+        Move (tCode.bValid and ;
+              iTotal <= iExpiration and ;
+              tCode.sClientId = sClientId and ;
+              tcode.sRedirectURI = sRedirectUri) to bValid
+              
+        If (not(bValid) and tCode.bValid) Begin
+            // Flag it as invalid ("consume" it (OidcAuthorizationCode.Valid = 0)
+            Send OnConsumeAuthCode of hoOidcProvider tCode.sAuthCode
+        End
+        
+        Function_Return bValid
+    End_Function
+    
+    Procedure SetResponseStatus UShort usStatusCode String sReason UShort usStatusSubCode
+        Set psStatusCode to usStatusCode
+        
+        If (num_arguments > 2) Begin
+            Forward Send SetResponseStatus usStatusCode sReason usStatusSubCode
+        End
+        Else Begin
+           Forward Send SetResponseStatus usStatusCode sReason 0 
+        End
+    End_Procedure
+    
+    { Visibility=Private }
+    Function OidcIsNumeric String sInput Returns Boolean
+        Integer iIndex iIndexTo iDecimalSep iThousandSep iDecimalCount
+        Boolean bNumeric
+        String sChar
+    
+        Get_Attribute DF_DECIMAL_SEPARATOR   to iDecimalSep
+        Get_Attribute DF_THOUSANDS_SEPARATOR to iThousandSep
+    
+        Move (Trim(sInput)) to sInput
+        Move (Length(sInput)) to iIndexTo
+        If (sInput = "") Function_Return False
+    
+        Move True to bNumeric
+        Move 0    to iDecimalCount
+    
+        For iIndex from 1 to 
+            Move (Mid(sInput, 1, iIndex)) to sChar
+    
+            // Leading minus sign only
+            If (sChar = "-" ) Begin
+                If (iIndex <> 1) Move False to bNumeric
+            End
+    
+            // Decimal separator (only once)
+            Else If (Ascii(sChar) = iDecimalSep) Begin
+                Increment iDecimalCount
+                If (iDecimalCount > 1) Move False to bNumeric
+            End
+    
+            // Thousands separator (allowed, but not first char)
+            Else If (Ascii(sChar) = iThousandSep) Begin
+                If (iIndex = 1) Move False to bNumeric
+            End
+    
+            // Digits
+            Else If (sChar < "0" or sChar > "9") Begin
+                Move False to bNumeric
+            End
+    
+            If (not(bNumeric)) ;
+                Break
+        Loop
+    
+        // Reject strings like "-" or "-," or "-."
+        If (bNumeric and (sInput = "-" or sInput = "-"+Character(iDecimalSep))) ;
+            Move False to bNumeric
+    
+        Function_Return bNumeric
+    End_Function
+End_Class

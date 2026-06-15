@@ -2,6 +2,11 @@
 
 This directory should only include the library.
 
+## Table Of Contents
+
+- [Structure](#structure)
+- [Getting Started](#getting-started)
+
 ## Structure
 
 - `Appsrc/<library-name>`: Contains the source code of the library.

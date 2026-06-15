@@ -1,0 +1,9 @@
+Struct tOidcConsentAudit
+    String sAuditId
+    String sClientId
+    String sSubId
+    String sScopes
+    String sAction
+    DateTime dtPerformedAt
+    String sPerformedBy
+End_Struct

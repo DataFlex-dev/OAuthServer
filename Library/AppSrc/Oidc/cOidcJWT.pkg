@@ -1,0 +1,187 @@
+Use JWT\JWT.pkg
+Use Oidc\cOidcProvider.pkg
+Use Oidc\Structs\tOidcAuthorizationCodeInfo.pkg
+Use Oidc\Structs\tOidcClient.pkg
+Use Oidc\Structs\tOidcUserInfo.pkg
+Use Oidc\Structs\tOidcJWK.pkg
+Use Oidc\Structs\tOidcJWKS.pkg
+Use Oidc\Constants\OidcStandardClaimConstants.pkg
+
+Class cOidcJWT is a cJsonWebToken
+    Procedure Construct_Object
+        Forward Send Construct_Object
+        
+        Property Handle phoOidcKeyStore 0 // Handle to the key store that we need to register
+        Property Handle phoOidcProvider 0 // Handle to the provider
+    End_Procedure  
+    
+    { MethodType=Property }
+    Procedure Set CustomClaim String sClaim String sValue
+        Boolean bValue
+        Integer iType
+        Handle hoOidcProvider
+        
+        Move jsonTypeString to iType
+        
+        Get phoOidcProvider to hoOidcProvider
+        If (hoOidcProvider) Begin
+            Send OnGetClaimJsonType of hoOidcProvider sClaim (&iType)
+        End
+        
+        If (iType = jsonTypeBoolean) Begin
+            Move (If(Lowercase(sValue) = "true", "1", "0")) to sValue
+        End
+
+        If (SizeOfString(sValue) > 0) Begin
+            Send SetMemberValue sClaim iType sValue
+        End
+    End_Procedure
+    { MethodType=Property }
+    Function CustomClaim String sClaim Returns String
+        If (not(HasMember(Self, sClaim))) Function_Return ""
+        Function_Return (MemberValue(Self, sClaim))
+    End_Function
+    
+    Procedure LoadKeys
+        Handle hoKeyStore
+        tOidcJWKS tJwks
+        String sActiveKeyIdentifier
+        Integer iIndex
+        tOidcJWK tSearchJwk tCurrentJwk
+        Boolean bOk
+        
+        // Load all the signing keys
+        Get KeyStoreHandle to hoKeyStore
+        If (hoKeyStore = 0) Begin
+            Procedure_Return
+        End
+        
+        // TODO: Load all the keys, use a prefered key type for clients and fallback to the "Active" key
+        Get ptJwks of hoKeyStore to tJwks
+        Get psActiveKeyIdentifier of hoKeyStore to sActiveKeyIdentifier
+        Move sActiveKeyIdentifier to tSearchJwk.sKid
+        
+        Move (SearchArray(tSearchJwk, tJwks.atKeys)) to iIndex
+        If (iIndex = -1) Begin
+             Error DFERR_PROGRAM (SFormat("Key with id '%1' not found", sActiveKeyIdentifier))
+             Procedure_Return
+        End
+        
+        Move tJwks.atKeys[iIndex] to tCurrentJwk
+        // Not for signing
+        If (tCurrentJwk.sUse <> "sig") Begin
+            Error DFERR_PROGRAM (SFormat("Key with id '%1' can't be used for signing", sActiveKeyIdentifier))
+            Procedure_Return
+        End
+        
+        Get AddJWTPublicKey tCurrentJwk.sKid tCurrentJwk.sPublicPem to bOk
+        If (not(bOk)) Begin
+            Error DFERR_PROGRAM (SFormat("Adding public key with id '%1' failed", tCurrentJwk.sKid))
+            Procedure_Return
+        End
+        
+        Get AddJWTPrivateKey tCurrentJwk.sKid tCurrentJwk.sPrivatePem to bOk
+        If (not(bOk)) Begin
+            Error DFERR_PROGRAM (SFormat("Adding private key with id '%1' failed", tCurrentJwk.sKid))
+            Procedure_Return
+        End
+    End_Procedure
+    
+    Function GenerateToken tNameValuePair[] atClaims Returns String
+        Integer iSize iIndex iSearchIndex iAlg
+        String sClaim sValue sToken sKid
+        Handle hoKeyStore
+        tOidcJWKS tJwks
+        tOidcJWK tSearchJwk
+        
+        // Clear resets the internal cJsonObject
+        Send Clear
+
+        Move (SizeOfArray(atClaims)) to iSize
+        For iIndex from 0 to (iSize - 1)
+            Move atClaims[iIndex].sName to sClaim
+            Move atClaims[iIndex].sValue to sValue
+            
+            Case Begin
+                Case (sClaim = C_OIDC_CLAIM_AUDIENCE)
+                    Set Audience to sValue
+                    Case Break
+                Case (sClaim = C_OIDC_CLAIM_JTI)
+                    Set JWTID to sValue
+                    Case Break
+                Case (sClaim = C_OIDC_CLAIM_SUBJECT)
+                    Set Subject to sValue
+                    Case Break
+                Case (sClaim = C_OIDC_CLAIM_ISSUER)
+                    Set Issuer to sValue
+                    Case Break
+                Case (sClaim = C_OIDC_CLAIM_EXPIRY)
+                    Set Expiration to sValue
+                    Case Break
+                Case (sClaim = C_OIDC_CLAIM_ISSUED_AT)
+                    Set IssuedAt to sValue
+                    Case Break
+                Case (sClaim = C_OIDC_CLAIM_NOT_BEFORE)
+                    Set NotBefore to sValue
+                    Case Break
+                Case Else
+                    // Every exception above is non-string CustomClaim uses string as type unless it's exactly "true" or "false"
+                    Set CustomClaim sClaim to sValue
+            Case End
+        Loop
+
+        // TODO: Find a way to let clients choose their signing key so they can verify the signature
+        //       Not every client supports all algorithms the authorization server supports
+        Get RandomSigningKid to sKid
+        
+        // Determine algorithm to use based on the key
+        Get KeyStoreHandle to hoKeyStore
+        If (hoKeyStore = 0) ;
+            Procedure_Return
+        
+        Move sKid to tSearchJwk.sKid
+        Get ptJwks of hoKeyStore to tJwks
+        Move (SearchArray(tSearchJwk, tJwks.atKeys)) to iSearchIndex
+        
+        If (iSearchIndex = -1) Begin
+            Error DFERR_PROGRAM "JWK not found to determine algorithm for JWT signing"
+            Procedure_Return
+        End
+        
+        Get AlgorithmStringToInteger tJwks.atKeys[iSearchIndex].sAlg to iAlg
+        Set peAlgorithm to iAlg
+        Get EncodeString sKid to sToken
+        
+        Function_Return sToken
+    End_Function
+    
+    Function RandomSigningKid Returns String
+        stJWTKey[] atPrivateKeys
+        Integer iSize iIndex
+        
+        Get pstaJWTPrivateKeys to atPrivateKeys
+        Move (SizeOfArray(atPrivateKeys)) to iSize
+        If (iSize = 0) Begin
+            Error DFERR_PROGRAM "No private keys available for signing the JWT"
+            Function_Return ""    
+        End
+        
+        Move (Random(iSize)) to iIndex
+        
+        Function_Return atPrivateKeys[iIndex].sKeyIdentifier
+    End_Function
+    
+    { Visibility=Private }
+    Function KeyStoreHandle Returns Handle
+        Handle hoOidcKeyStore
+        
+        Move False to Err
+        Get phoOidcKeyStore to hoOidcKeyStore
+        If (hoOidcKeyStore = 0) Begin
+            // ToDo: Log it
+            Error DFERR_PROGRAM "Invalid phoOidcKeyStore value in cOidcHandler.pkg."
+        End
+        
+        Function_Return hoOidcKeyStore
+    End_Function
+End_Class

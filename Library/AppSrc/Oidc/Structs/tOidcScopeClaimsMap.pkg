@@ -1,0 +1,6 @@
+Struct tOidcScopeClaimsMap
+    String   sScope
+    String[] asAllowedClaims
+    Boolean  bIsSystemScope
+    String   sAudience
+End_Struct

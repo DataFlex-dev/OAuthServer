@@ -1,0 +1,22 @@
+Use DFSecurity_LibSodium.pkg // Dependend on DF Security library (Libsodium version)
+
+Class cOidcSha256Hasher is a cSecureHash
+    Procedure Construct_Object
+        Forward Send Construct_Object
+        
+        Set piHashImplementation to C_SEC_HASH_LIBSODIUM_SHA256
+        Send Initialize
+    End_Procedure
+    
+    Function Hash String sInput Returns String
+        UChar[] ucaData ucaHash
+        String sHash
+        
+        Move (StringToUCharArray(sInput)) to ucaData
+        Send Update ucaData
+        
+        Get Finalize to ucaHash
+        
+        Function_Return (UCharArrayToString(ucaHash, SizeOfArray(ucaHash)))
+    End_Function
+End_Class

@@ -1,0 +1,188 @@
+﻿Use cWebHttpHandler.pkg
+Use Oidc\OidcFunctions.pkg
+Use Oidc\Constants\OidcOpenSSLConstants.pkg
+Use Oidc\Constants\OidcJwksConstants.pkg
+Use Oidc\Constants\OidcResponseConstants.pkg
+
+Class cOidcWellKnownHandler is a cWebHttpHandler
+    Procedure Construct_Object
+        Forward Send Construct_Object
+        
+        Property Handle phoOidcProvider 0
+        Property Handle phoOidcKeyStore 0
+        Property Handle phoOidcHandler  0
+        
+        Set psPath to ".well-known"
+        Set psVerbs to "GET"
+    End_Procedure
+    
+    Procedure OnHttpGet String sPath String sAcceptType
+        Handle hoJson
+        String sJson
+        
+        // Strip leading slash of sPath
+        Move (Right(sPath, SizeOfString(sPath) - 1)) to sPath
+        
+        Get Create (RefClass(cJsonObject)) to hoJson
+        Send InitializeJsonType of hoJson jsonTypeObject
+        
+        Case Begin
+            Case (sPath = C_OIDC_ENDPOINT_WK_OPENID_CONFIGURATION)
+                Send CreateOpenIdConfiguration (&hoJson)
+                Case Break
+                
+            Case (sPath = C_OIDC_ENDPOINT_WK_JWKS)
+                Send CreateJWKSJson (&hoJson)
+                Case Break
+            
+            Case Else
+                // By default we do nothing
+        Case End
+        
+        // The well-known endpoints always return JSON
+        Send AddHttpResponseHeader C_OIDC_HTTP_HEADER_CONTENT_TYPE C_OIDC_CONTENT_TYPE_APPLICATION_JSON
+        Get Stringify of hoJson to sJson
+        Send Destroy of hoJson
+        Send OutputString sJson
+    End_Procedure
+    
+        // Creates a openid-configuration json structure
+    Procedure CreateOpenIdConfiguration Handle ByRef hoJson
+        Handle hoOidcProvider hoOidcHandler hoJsonArr hoUniqueScopesArr hoUniqueClaimsArr
+        String sIssuerURI sOidcBasePath sOidcURI sWellKnownPath
+        Integer iPos iScopeIndex iClaimsIndex
+        tOidcScopeClaimsMap[] atScopeClaimsMap
+        
+        Get phoOidcProvider to hoOidcProvider
+        If (hoOidcProvider = 0) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_INTERNAL_SERVER_ERROR C_OIDC_RESPONSE_REASON_INTERNAL_SERVER_ERROR
+            Send ErrorResponse C_OIDC_RESPONSE_REASON_INTERNAL_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR (&hoJson)
+            Procedure_Return
+        End
+        
+        // Get base url
+        Send OnGetApplicationBaseUrl of hoOidcProvider (&sIssuerURI)
+        Send OidcEnsureTrailingSlash (&sIssuerURI)
+        
+        Get phoOidcHandler to hoOidcHandler
+        If (hoOidcHandler = 0) Begin
+            Send SetResponseStatus C_OIDC_RESPONSE_STATUS_INTERNAL_SERVER_ERROR C_OIDC_RESPONSE_REASON_INTERNAL_SERVER_ERROR
+            Send ErrorResponse C_OIDC_RESPONSE_REASON_INTERNAL_SERVER_ERROR C_OIDC_ERR_DESC_SERVER_ERROR (&hoJson)
+            Procedure_Return
+        End
+        Get psPath of hoOidcHandler to sOidcBasePath
+        Send OidcEnsureTrailingSlash (&sOidcBasePath)
+        Move (sIssuerURI + sOidcBasePath) to sOidcURI
+        
+        Get psPath to sWellKnownPath
+        Send OidcEnsureTrailingSlash (&sWellKnownPath)
+        
+        // Issuer MUST be the base URI from where this openid-configuration is read, this can be setup using the OnGetApplicationBaseUrl in the OidcProvider
+        Send SetMemberValue of hoJson C_OIDC_WK_ISSUER                      jsonTypeString sIssuerURI
+        // The authorization could be on a different domain but for this     implementation it's not
+        Send SetMemberValue of hoJson C_OIDC_WK_AUTH_ENDPOINT               jsonTypeString (sOidcURI + C_OIDC_ENDPOINT_AUTHORIZE)
+        Send SetMemberValue of hoJson C_OIDC_WK_TOKEN_ENDPOINT              jsonTypeString (sOidcURI + C_OIDC_ENDPOINT_TOKEN)
+        Send SetMemberValue of hoJson C_OIDC_WK_USER_INFO_ENDPOINT          jsonTypeString (sOidcURI + C_OIDC_ENDPOINT_USERINFO)
+        Send SetMemberValue of hoJson C_OIDC_WK_REVOCATION_ENDPOINT         jsonTypeString (sOidcURI + C_OIDC_ENDPOINT_REVOKE)
+        Send SetMemberValue of hoJson C_OIDC_WK_INTROSPECT_ENDPOINT         jsonTypeString (sOidcURI + C_OIDC_ENDPOINT_INTROSPECT)
+        Send SetMemberValue of hoJson C_OIDC_WK_JWKS_URI                    jsonTypeString (sIssuerURI + sWellKnownPath + C_OIDC_ENDPOINT_WK_JWKS)
+        Send SetMemberValue of hoJson C_OIDC_WK_REQUEST_PARAMETER_SUPPORTED jsonTypeBoolean False
+        Send SetMemberValue of hoJson C_OIDC_WK_CLAIMS_PARAMETER_SUPPORTED  jsonTypeBoolean False
+        
+        Send OnGetScopeToClaimsMap of hoOidcProvider (&atScopeClaimsMap)
+        Send OidcGenerateUniqueScopeAndClaimJsonArrays atScopeClaimsMap (&hoUniqueScopesArr) (&hoUniqueClaimsArr)
+        // Add to the resulting json
+        Send SetMember of hoJson C_OIDC_WK_SCOPES_SUPPORTED hoUniqueScopesArr
+        
+        // We only support 'Authorization Code Flow' in this version
+        Get Create (RefClass(cJsonObject)) to hoJsonArr
+        Send InitializeJsonType of hoJsonArr jsonTypeArray
+        Send InitializeJsonType of hoJsonArr jsonTypeArray
+        Send AddMemberValue of hoJsonArr jsonTypeString C_OIDC_RESPONSE_TYPE_CODE
+        Send SetMember of hoJson C_OIDC_WK_RESPONSE_TYPES_SUPPORTED hoJsonArr
+        
+        // Client authentication modes supported
+        Send InitializeJsonType of hoJsonArr jsonTypeArray
+        Send AddMemberValue of hoJsonArr jsonTypeString C_OIDC_CLIENT_AUTH_METHOD_NONE
+        Send AddMemberValue of hoJsonArr jsonTypeString C_OIDC_CLIENT_AUTH_METHOD_BASIC
+        Send AddMemberValue of hoJsonArr jsonTypeString C_OIDC_CLIENT_AUTH_METHOD_POST
+        Send SetMember of hoJson C_OIDC_WK_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED hoJsonArr
+        
+        // We support query and fragment response modes
+        Send InitializeJsonType of hoJsonArr jsonTypeArray
+        Send AddMemberValue of hoJsonArr jsonTypeString C_OIDC_RESPONSE_MODE_QUERY
+        Send AddMemberValue of hoJsonArr jsonTypeString C_OIDC_RESPONSE_MODE_FRAGMENT
+        Send SetMember of hoJson C_OIDC_WK_RESPONSE_MODES_SUPPORTED hoJsonArr
+        
+        // Grant types (for the Authorization Code Flow it will only be "authorization_code" and "refresh_token")
+        Send InitializeJsonType of hoJsonArr jsonTypeArray
+        Send AddMemberValue of hoJsonArr jsonTypeString C_OIDC_GRANT_TYPE_AUTH_CODE
+        Send AddMemberValue of hoJsonArr jsonTypeString C_OIDC_GRANT_TYPE_REFRESH_TOKEN
+        Send AddMemberValue of hoJsonArr jsonTypeString C_OIDC_GRANT_TYPE_CLIENT_CREDENTIALS
+        Send SetMember of hoJson C_OIDC_WK_GRANT_TYPES_SUPPORTED hoJsonArr
+        
+        // We will only support "public" subject types
+        // Subject types determine how the sub claim is filled (possible values: "public" and "pairwise")
+        // For "pairwise" the Authorization server normally hashes the userID + clientID to determine it's sub, the hash and original user_id is then save in the DB.
+        Send InitializeJsonType of hoJsonArr jsonTypeArray
+        Send AddMemberValue of hoJsonArr jsonTypeString C_OIDC_SUBJECT_TYPE_PUBLIC
+        Send SetMember of hoJson C_OIDC_WK_SUBJECT_TYPES_SUPPORTED hoJsonArr
+        
+        // ID Token signing algorithms (It is recommended to support RS256, extra algorithms are optional)
+        Send InitializeJsonType of hoJsonArr jsonTypeArray
+        Send AddMemberValue of hoJsonArr jsonTypeString C_OIDC_ALGORITHM_EDDSA
+        Send AddMemberValue of hoJsonArr jsonTypeString C_OIDC_ALGORITHM_RS256
+        Send SetMember of hoJson C_OIDC_WK_ID_TOKEN_SIGNING_ALG_VALUES_SUPPORTED hoJsonArr
+        
+        // Claims supported 
+        Send SetMember of hoJson C_OIDC_WK_CLAIMS_SUPPORTED hoUniqueClaimsArr
+
+        Send Destroy of hoJsonArr
+        Send Destroy of hoUniqueScopesArr
+        Send Destroy of hoUniqueClaimsArr
+    End_Procedure
+    
+    Procedure CreateJWKSJson Handle ByRef hoJson
+        Handle hoKeyStore hoJsonArr hoJsonJwk
+        tOidcJWKS tJwks
+        tOidcJWK tCurrentJwk
+        Integer iIndex
+        
+        Get phoOidcKeyStore to hoKeyStore
+        Get ptJwks of hoKeyStore to tJwks
+        
+        Get Create (RefClass(cJsonObject)) to hoJsonArr
+        Send InitializeJsonType of hoJsonArr jsonTypeArray
+        
+        For iIndex from 0 to (SizeOfArray(tJwks.atKeys) - 1)
+            Move tJwks.atKeys[iIndex] to tCurrentJwk
+            
+            Get Create (RefClass(cJsonObject)) to hoJsonJwk
+            Send InitializeJsonType of hoJsonJwk jsonTypeObject
+            Send SetMemberValue of hoJsonJwk C_OIDC_JWKS_KID jsonTypeString tCurrentJwk.sKid
+            Send SetMemberValue of hoJsonJwk C_OIDC_JWKS_KTY jsonTypeString tCurrentJwk.sKty
+            Send SetMemberValue of hoJsonJwk C_OIDC_JWKS_ALG jsonTypeString tCurrentJwk.sAlg
+            Send SetMemberValue of hoJsonJwk C_OIDC_JWKS_USE jsonTypeString tCurrentJwk.sUse
+            
+            Case Begin
+                Case (tCurrentJwk.sKty = C_OIDC_OSSL_KEY_TYPE_RSA)
+                        Send SetMemberValue of hoJsonJwk C_OIDC_JWKS_MODULUS  jsonTypeString tCurrentJwk.sN
+                        Send SetMemberValue of hoJsonJwk C_OIDC_JWKS_EXPONENT jsonTypeString tCurrentJwk.sE
+                    Case Break
+                
+                Case Else
+                    Error DFERR_PROGRAM (SFormat("Invalid key type %1 passed", tCurrentJwk.sKty))
+                    Procedure_Return
+            Case End
+            Send AddMember of hoJsonArr hoJsonJwk
+            Send Destroy of hoJsonJwk
+        Loop
+        
+        Send SetMember of hoJson "keys" hoJsonArr
+    End_Procedure
+       
+    Procedure ErrorResponse String sError String sErrDesc Handle ByRef hoJson
+        Send SetMemberValue of hoJson C_OIDC_PARAM_ERROR jsonTypeString sError
+        Send SetMemberValue of hoJson C_OIDC_PARAM_ERROR_DESCRIPTION jsonTypeString sErrDesc
+    End_Procedure
+End_Class

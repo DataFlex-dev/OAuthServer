@@ -1,0 +1,31 @@
+﻿Use DataDict.pkg
+
+Open OidcClient
+Open OidcAuthorizationCode
+Open OidcCallbackURL
+Open OidcClientScopes
+Open OidcRevokedRefreshToken
+
+Class cOidcClientDataDictionary is a DataDictionary
+    
+    Procedure Construct_Object
+        Forward Send Construct_Object
+        Set Main_File to OidcClient.File_Number
+
+        Set Add_Client_File to OidcAuthorizationCode.File_Number
+        Set Add_Client_File to OidcCallbackURL.File_Number
+        Set Add_Client_File to OidcClientScopes.File_Number
+        Set Add_Client_File to OidcRevokedRefreshToken.File_Number
+
+        Set Foreign_Field_Option DD_KEYFIELD DD_NOPUT to True
+        Set Foreign_Field_Option DD_KEYFIELD DD_FINDREQ to True
+        Set Foreign_Field_Option DD_INDEXFIELD DD_NOPUT to True
+        Set Foreign_Field_Option DD_DEFAULT DD_DISPLAYONLY to True
+
+    End_Procedure
+    
+    Procedure Creating
+        Forward Send Creating
+        Move (CurrentDateTime()) to OidcClient.CreatedAt
+    End_Procedure
+End_Class

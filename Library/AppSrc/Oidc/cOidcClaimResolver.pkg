@@ -1,0 +1,11 @@
+Use tNameValuePair.pkg
+Use errornum.inc
+Use Oidc\Structs\tOidcClient.pkg
+Use Oidc\Structs\tOidcUserInfo.pkg
+
+Class cOidcClaimResolver is a cObject
+    { MethodType=Event }
+    Procedure OnResolveClaim tOidcUserInfo tUserInfo tOidcClient tClient String sClaim Boolean bIsSystemScope String[] asRequestedScopes String ByRef sValue
+        Error DFERR_PROGRAM "ResolveClaims should be implemented by a subclass"
+    End_Procedure
+End_Class

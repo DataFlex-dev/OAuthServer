@@ -1,0 +1,6 @@
+Use Oidc\Structs\tOidcJWK.pkg
+
+Struct tOidcJWKS
+    { Name="keys" }
+    tOidcJWK[] atKeys    
+End_Struct

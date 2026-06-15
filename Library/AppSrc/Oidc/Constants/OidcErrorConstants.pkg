@@ -1,0 +1,68 @@
+// Default OAuth 2.0 error types
+Define C_OIDC_ERR_INVALID_REQUEST                       for "invalid_request"
+Define C_OIDC_ERR_UNAUTHORIZED_CLIENT                   for "unauthorized_client"
+Define C_OIDC_ERR_ACCESS_DENIED                         for "access_denied"
+Define C_OIDC_ERR_UNSUPPORTED_GRANT_TYPE                for "unsupported_grant_type"
+Define C_OIDC_ERR_UNSUPPORTED_RESPONSE_TYPE             for "unsupported_response_type"
+Define C_OIDC_ERR_INVALID_SCOPE                         for "invalid_scope"
+Define C_OIDC_ERR_SERVER_ERROR                          for "server_error"
+Define C_OIDC_ERR_TEMP_UNAVAILABLE                      for "temporarily_unavailable"
+Define C_OIDC_ERR_INVALID_GRANT                         for "invalid_grant"
+Define C_OIDC_ERR_INVALID_CLIENT                        for "invalid_client"
+
+// Default OAuth 2.0 error descriptions                 
+Define C_OIDC_ERR_DESC_INVALID_REQUEST                  for "The request is missing a required parameter, includes an invalid parameter value, includes a parameter more than once, or is otherwise malformed."
+Define C_OIDC_ERR_DESC_UNAUTHORIZED_CLIENT              for "The client is not authorized to request an authorization code using this method."
+Define C_OIDC_ERR_DESC_ACCESS_DENIED                    for "The resource owner or authorization server denied the request." 
+Define C_OIDC_ERR_DESC_UNSUPPORTED_GRANT_TYPE           for "The authorization grant type is not supported by the authorization server."
+Define C_OIDC_ERR_DESC_UNSUPPORTED_RESPONSE_TYPE        for "The authorization server does not support obtaining an authorization code using this method."
+Define C_OIDC_ERR_DESC_INVALID_SCOPE                    for "The requested scope is invalid, unknown, or malformed."
+Define C_OIDC_ERR_DESC_SERVER_ERROR                     for "The authorization server encountered an unexpected condition that prevented it from fulfilling the request."
+Define C_OIDC_ERR_DESC_TEMP_UNAVAILABLE                 for "The authorization server is currently unable to handle the request due to a temporary overloading or maintenance of the server."
+Define C_OIDC_ERR_DESC_INVALID_GRANT                    for "The provided authorization grant (e.g., authorization code, resource owner credentials) or refresh token is invalid, expired, revoked, does not match the redirection URI used in the authorization request, or was issued to another client."
+Define C_OIDC_ERR_DESC_INVALID_CLIENT                   for "Client authentication failed (e.g., unknown client, no client authentication included, or unsupported authentication method)."
+
+// Error types extended by OpenID Connect               
+Define C_OIDC_ERR_INTERACTION_REQUIRED                  for "interaction_required"
+Define C_OIDC_ERR_LOGIN_REQUIRED                        for "login_required"
+Define C_OIDC_ERR_ACCOUNT_SELECTION_REQUIRED            for "account_selection_required"
+Define C_OIDC_ERR_CONSENT_REQUIRED                      for "consent_required"
+Define C_OIDC_ERR_INVALID_REQUEST_URI                   for "invalid_request_uri"
+Define C_OIDC_ERR_INVALID_REQUEST_OBJECT                for "invalid_request_object"
+Define C_OIDC_ERR_REQUEST_NOT_SUPPORTED                 for "request_not_supported"
+Define C_OIDC_ERR_REQUEST_URI_NOT_SUPPORTED             for "request_uri_not_supported"
+Define C_OIDC_ERR_REGISTRATION_NOT_SUPPORTED            for "registration_not_supported"
+Define C_OIDC_ERR_INVALID_TOKEN                         for "invalid_token"
+
+// Extended error type descriptions
+Define C_OIDC_ERR_DESC_INTERACTION_REQUIRED             for "The Authorization Server requires End-User interaction of some form to proceed."
+Define C_OIDC_ERR_DESC_LOGIN_REQUIRED                   for "The Authorization Server requires End-User authentication to proceed."
+Define C_OIDC_ERR_DESC_ACCOUNT_SELECTION_REQUIRED       for "The End-User is required to select a session at the Authorization Server."
+Define C_OIDC_ERR_DESC_CONSENT_REQUIRED                 for "The Authorization Server requires End-User consent to proceed."
+Define C_OIDC_ERR_DESC_INVALID_REQUEST_URI              for "The request_uri in the Authorization Request returns an error or contains invalid data."
+Define C_OIDC_ERR_DESC_INVALID_REQUEST_OBJECT           for "The request parameter contains an invalid Request Object."
+Define C_OIDC_ERR_DESC_REQUEST_NOT_SUPPORTED            for "The Authorization Server does not support use of the request parameter."
+Define C_OIDC_ERR_DESC_REQUEST_URI_NOT_SUPPORTED        for "The Authorization Server does not support use of the request_uri parameter."
+Define C_OIDC_ERR_DESC_REGISTRATION_NOT_SUPPORTED       for "The Authorization Server does not support use of the registration parameter."
+Define C_OIDC_ERR_DESC_MISSING_CODE_CHALLENGE           for "Missing code_challenge parameter for a public client."
+Define C_OIDC_ERR_DESC_MISSING_CODE_CHALLENGE_METHOD    for "Missing code_challenge_method parameter for a public client."
+Define C_OIDC_ERR_DESC_INVALID_CODE_CHALLENGE_METHOD    for "Invalid code_challenge_method value provided. Supported methods are 'S256' or 'plain'."
+Define C_OIDC_ERR_DESC_MISSING_CODE_VERIFIER            for "Missing code_verifier parameter for a public client."
+Define C_OIDC_ERR_DESC_POST_VERB_NOT_SUPPORTED          for "The Authorization Server does not support the POST method for this endpoint. Use GET."
+Define C_OIDC_ERR_DESC_GET_VERB_NOT_SUPPORTED           for "The Authorization Server does not support the GET method for this endpoint. Use POST."
+Define C_OIDC_ERR_DESC_MEDIA_TYPE_UNSUPPORTED           for "The Authorization Server does not support Content-Type '%1'."
+Define C_OIDC_ERR_DESC_UNKNOWN_CONTENT_TYPE             for "Unknown Content-Type."
+Define C_OIDC_ERR_DESC_USE_X_WWW_FORM_URLENCODED        for "Use application/x-www-form-urlencoded."
+Define C_OIDC_ERR_DESC_INVALID_CODE_VERIFIER            for "Invalid code_verifier."
+Define C_OIDC_ERR_DESC_HTTPS_REQUIRED                   for "HTTPS is required for this endpoint."
+Define C_OIDC_ERR_DESC_INVALID_TOKEN                    for "The access token is invalid or expired."
+Define C_OIDC_ERR_DESC_INSUFFICIENT_SCOPE               for "The access token does not contain the required scopes"
+Define C_OIDC_ERR_DESC_MULTIPLE_ACCESS_TOKENS_PROVIDED  for "Multiple access tokens provided"
+
+// Internal library error return values
+Enum_List
+    Define C_OIDC_GENERATE_TOKENS_SUCCESS      for 0
+    Define C_OIDC_GENERATE_TOKENS_SERVER_ERROR
+    Define C_OIDC_GENERATE_TOKENS_INVALID_SCOPE
+    Define C_OIDC_GENERATE_TOKENS_UNAUTHORIZED_CLIENT
+End_Enum_List

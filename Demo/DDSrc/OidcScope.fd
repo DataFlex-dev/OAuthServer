@@ -1,0 +1,8 @@
+#REPLACE FILE9 OidcScope
+#REPLACE OidcScope.File_Number |CI9
+#REPLACE OidcScope.ScopeName |FS9,1
+#REPLACE OidcScope.DisplayName |FS9,2
+#REPLACE OidcScope.Description |FS9,3
+#REPLACE OidcScope.Claims |FS9,4
+#REPLACE OidcScope.IsSystemScope |FN9,5
+#REPLACE OidcScope.Audience |FS9,6

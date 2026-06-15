@@ -1,0 +1,1232 @@
+Use cWebComponent.pkg
+Use WinUuid.pkg
+Use JWT\JWT.pkg
+
+Use Oidc\cOidcClaimResolver.pkg
+Use Oidc\cOidcJWT.pkg
+
+Use Oidc\Constants\OidcStandardClaimConstants.pkg
+Use Oidc\Constants\OidcStandardScopeConstants.pkg
+Use Oidc\Constants\OidcErrorConstants.pkg
+Use Oidc\Constants\OidcParameterConstants.pkg
+Use Oidc\Constants\OidcWellKnownConstants.pkg
+
+Use Oidc\Structs\tOidcClient.pkg
+Use Oidc\Structs\tOidcConsentAudit.pkg
+Use Oidc\Structs\tOidcAuthorizationCodeInfo.pkg
+Use Oidc\Structs\tOidcJsonWebToken.pkg
+Use Oidc\Structs\tOidcScopeClaimsMap.pkg
+Use Oidc\Structs\tOidcRefreshToken.pkg
+Use Oidc\Structs\tOidcUserInfo.pkg
+Use Oidc\Structs\tOidcExpiries.pkg
+Use Oidc\Structs\tOidcTokenClaimMap.pkg
+Use Oidc\Structs\tOidcCustomClaims.pkg
+Use Oidc\Structs\tOidcRequest.pkg
+
+Use Oidc\OidcFunctions.pkg
+
+
+Class cOidcProvider is a cWebComponent
+    
+    Procedure Construct_Object
+        Property Boolean pbLogging              True
+        Property Handle phoOidcHandler          0 // Handle to the handler
+        Property Handle phoOidcKeyStore         0 // Handle to the key store
+        Property Handle phoClaimResolver        0 // Resolves claims for requested scopes
+        Property Handle phoJWT                  0 // Handle to the JWT object
+        
+        { DesignTime=True }
+        { EnumList="C_JWT_ALG_HS_256 C_JWT_ALG_HS_384 C_JWT_ALG_HS_512 C_JWT_ALG_RS_256 C_JWT_ALG_RS_384 C_JWT_ALG_RS_512 C_JWT_ALG_PS_256 C_JWT_ALG_PS_384 C_JWT_ALG_PS_512 C_JWT_ALG_ES_256 C_JWT_ALG_ES_384 C_JWT_ALG_ES_512" }
+        Property Integer peSigningAlgorithm C_JWT_ALG_HS_512
+        
+        { Visibility=Private }
+        Property Integer[] piaIgnoredErrors
+        
+        Object oJWT is a cOidcJWT
+        End_Object
+    End_Procedure
+    
+    Procedure End_Construct_Object
+        Handle hoOidcKeyStore
+        Integer iAlgo
+        
+        Forward Send End_Construct_Object
+        
+        Get phoOidcKeyStore to hoOidcKeyStore
+        Set phoOidcKeyStore of oJWT to hoOidcKeyStore
+        Set phoOidcProvider of oJWT to Self
+        
+        Get peSigningAlgorithm to iAlgo
+        Set peAlgorithm of oJWT to iAlgo
+        
+        Send LoadKeys of oJWT
+        Set phoJWT to oJWT
+    End_Procedure
+    
+    // Returns whether a user is succesfully logged in
+    { MethodType=Event }
+    Procedure OnGetIsUserLoggedIn Boolean ByRef bLoggedIn
+        // Empty stub
+    End_Procedure
+    
+    // Returns the logged in users ID
+    { MethodType=Event }
+    Procedure OnGetUserId String ByRef sUserId
+        // Empty stub
+    End_Procedure
+    
+    // Used by the cOidcSessionManager to get the userID during UserLogin
+    { MethodType=Event }
+    Procedure OnGetUserIdFromLoginName String sLoginName String ByRef sUserId
+        // Empty stub
+    End_Procedure
+    
+    // Used by the cOidcSessionManager to upgrade a users password if the libraries hashing version updates
+    { MethodType=Event }
+    Procedure OnSetUserPassword String sUserId String sHashedPassword Boolean ByRef bOk
+    End_Procedure
+
+    // Returns a struct with user information used to fill claims that might be overridden by OnResolveClaims
+    { MethodType=Event }
+    Procedure OnGetUserInfo String sUserId tOidcUserInfo ByRef tUserInfoObject
+        // Empty stub
+    End_Procedure
+    
+    // Event that can be used to update the users LastLogin, used by cOidcSessionManager
+    { MethodType=Event }
+    Procedure OnUserAuthentication String sUserId String[] asScopes
+        // Empty stub
+    End_Procedure
+
+    // Generates the authorization code for the /authorize request
+    { MethodType=Event }
+    Procedure OnCreateAuthCode String ByRef sAuthCode
+        // Empty stub
+    End_Procedure
+
+    // When the user succesfully authorized we need to save the authorization code along with data tied to the authorization code
+    { MethodType=Event }
+    Procedure OnAuthorize String sAuthCode String sClientId String sUserId String sRedirectUri String sScope String sCodeChallenge String sCodeChallengeMethod String sOptNonce Boolean bOptScopeChanged
+        // Empty stub
+    End_Procedure
+
+    // Returns a struct with data tied to the authorization code
+    // This is needed to validate If the parameters passed to /token align with the original /authorize request
+    // The /token endpoint can pass a scope parameter i.e., that should be a SUBset of the original scopes requested
+    // Beside the subset of scopes there is need to verify PKCE codes, those are also saved along with the authorization code.
+    { MethodType=Event }
+    Procedure OnGetAuthCodeInfo String sAuthCode tOidcAuthorizationCodeInfo ByRef tCode
+        // Empty stub
+    End_Procedure
+
+    // Marks a authorization code as used
+    { MethodType=Event }
+    Procedure OnConsumeAuthCode String sAuthCode
+        // Empty stub
+    End_Procedure
+    
+    // Marks a refresh code as used
+    { MethodType=Event }
+    Procedure OnConsumeRefreshCode String sJTI
+        // Empty stub
+    End_Procedure
+
+    // Returns a list of scopes the user has consented to before for the given client (should return an empty list if none)
+    { MethodType=Event }
+    Procedure OnGetConsentedScopesByClientId String sUserId String sClientId String[] ByRef asAllowedScopes
+        // Empty stub
+    End_Procedure
+    
+    // Updates the scopes a user has consented to for a given client
+    { MethodType=Event }
+    Procedure OnSetConsentedScopesByClientId String sUserId String sClientId String[] asAllowedScopes String ByRef sOptActionType
+        // Empty stub
+    End_Procedure
+    
+    // Event that resolves the claims for a request, should fall back on data gotten from the OnGetUserInfo
+    // This probably shouldn't be overridden
+    { MethodType=Event }
+    Procedure OnResolveScopesToClaims String sUserId String sClientId String[] asScopes tNameValuePair[] ByRef atClaims
+        Integer  iIndex iIndexTo iSearchIndex
+        String[] asAllClaims asSystemClaims
+        String   sAudience sClaim
+        Boolean  bInclude bIsSystemScope bRequested
+        Handle   hoResolver
+        tOidcScopeClaimsMap[]   atScopeClaimsMap
+        tOidcUserInfo           tUserInfo
+        tOidcClient             tClient
+        tOidcScopeClaimsMap     tScopeClaimMap
+        tNameValuePair          tPair
+    
+        Send OnGetScopeToClaimsMap (&atScopeClaimsMap)
+    
+        Move (SizeOfArray(atScopeClaimsMap) - 1) to iIndexTo
+
+        Get OidcDedupeStringArray asScopes to asScopes
+    
+        For iIndex from 0 to iIndexTo
+            Move False to bInclude
+    
+            // Include if system scope
+            Move atScopeClaimsMap[iIndex].bIsSystemScope to bIsSystemScope
+            
+            If (bIsSystemScope) Begin
+                Move True to bInclude
+                Move (AppendArray(asSystemClaims, atScopeClaimsMap[iIndex].asAllowedClaims)) to asSystemClaims
+            End
+            
+            // Check for explicitly requested scopes
+            Move (SearchArray(atScopeClaimsMap[iIndex].sScope, asScopes)) to iSearchIndex
+            If (iSearchIndex <> -1) Begin
+                Move True to bRequested // Explicitly requested
+                Move True to bInclude                    
+            End
+    
+            If (bInclude) Begin
+                // Append claims
+                Move (AppendArray(asAllClaims, atScopeClaimsMap[iIndex].asAllowedClaims)) to asAllClaims
+    
+                // Append audience ONLY for requested scopes (skipping system scopes)
+                If (bRequested) Begin
+                    Move (sAudience * Trim(atScopeClaimsMap[iIndex].sAudience)) to sAudience
+                End
+            End
+        Loop
+    
+        // Dedupe final arrays
+        Get OidcDedupeStringArray asAllClaims    to asAllClaims
+        Get OidcDedupeStringArray asSystemClaims to asSystemClaims
+        Move (Trim(sAudience)) to sAudience
+        
+        Get phoClaimResolver to hoResolver
+        Send OnGetUserInfo sUserId (&tUserInfo)
+        Send OnGetClientInfo sClientId (&tClient)
+        
+        Move (SizeOfArray(asAllClaims) - 1) to iIndexTo
+        // Resolve each claim and create tNameValuePair in the resulting tNameValuePair[]
+        For iIndex from 0 to iIndexTo
+            Move asAllClaims[iIndex] to sClaim
+            
+            Move (SearchArray(sClaim, asSystemClaims) <> -1) to bIsSystemScope
+            
+            // Initialize the claim pair
+            Move sClaim to tPair.sName
+            Move ""     to tPair.sValue
+            
+            // Call resolver if it's set
+            If (hoResolver <> 0) Begin
+                Send OnResolveClaim of hoResolver tUserInfo tClient sClaim bIsSystemScope asScopes (&tPair.sValue)
+            End
+            
+            // Optionally we fill a default value for system claims if they are stil empty
+            If (bIsSystemScope and tPair.sValue = "") Begin
+                Get ResolveSystemClaim sClaim tClient tUserInfo to tPair.sValue
+            End
+            
+            If (sClaim = C_OIDC_CLAIM_AUDIENCE) Begin
+                If (tPair.sValue = "") Begin
+                    Move sAudience to tPair.sValue
+                End
+            End
+            
+            // Add client_id if not yet set by the ClaimResolver
+            If (sClaim = C_OIDC_CLAIM_CLIENT_ID and tPair.sValue = "") Begin
+                Move tClient.sClientId to tPair.sValue
+            End
+            
+            // append to the result
+            Move tPair to atClaims[-1]
+        Loop
+    End_Procedure
+    
+    // Returns a struct with client information, like the allowed callback urls, a client name etc
+    { MethodType=Event }
+    Procedure OnGetClientInfo String sClientId tOidcClient ByRef tClient
+        // Empty stub
+    End_Procedure
+    
+    // Provides a way to verify client secrets without passing the actual secret to the library
+    { MethodType=Event }
+    Procedure OnValidateClientSecret String sClientId String sClientSecret Boolean ByRef bShouldUpgrade Boolean ByRef bOk
+        // Empty stub
+    End_Procedure
+    
+    // Called when a refresh token is created, can be used to save them to the database for token reuse detection
+    { MethodType=Event }
+    Procedure OnCreateRefreshToken tOidcRefreshToken tRefreshToken
+        // Empty stub
+    End_Procedure
+    
+    // Called to validate the JWT signature and decode it, has a default implementation that can be overridden.
+    { MethodType=Event }
+    Procedure OnValidateToken String sJwt Boolean ByRef bOk tOidcJsonWebToken ByRef tOptToken
+        Integer iRetVal iIndex iIndexTo iSearchIndex
+        String sBaseUrl sIssuer sUsername
+        String[] asBlacklistMembers
+        Boolean bFound
+        tOidcUserInfo tUserInfo
+        tNameValuePair tSearch
+        
+        Get DecodeString of oJWT sJwt to iRetVal
+        
+        // Decode string checks for expiration aswell
+        If (iRetVal) Begin
+            Send LogErrorEvent 999 (SFormat("DecodeString gave return value '%1'", iRetVal))
+            Move False to bOk
+            Procedure_Return
+        End
+        
+        // Issuer should be ourself (By default this is the BaseUrl)
+        Send OnGetApplicationBaseUrl (&sBaseUrl)
+        Send OidcEnsureTrailingSlash (&sBaseUrl)
+        Get Issuer of oJWT to sIssuer
+        If (sIssuer <> sBaseUrl) Begin
+            Send LogErrorEvent 999 (SFormat("sIssuer <> sBaseUrl (%1 <> %2)", sIssuer, sBaseUrl))
+            Move False to bOk
+            Procedure_Return
+        End
+        
+        Move True to bOk
+        
+        If (num_arguments > 2) Begin
+            Move sIssuer to tOptToken.sIssuer
+        
+            // Get the JTI
+            Get JWTID of oJWT to tOptToken.sJTI
+            
+            // Get the scopes
+            Get CustomClaim of oJWT C_OIDC_CLAIM_SCOPE to tOptToken.sScope
+            
+            // Get the clientId
+            Get CustomClaim of oJWT C_OIDC_CLAIM_CLIENT_ID to tOptToken.sClientId
+            If (SizeOfString(tOptToken.sClientId) = 0) Begin
+                Get CustomClaim of oJWT C_OIDC_CLAIM_AZP to tOptToken.sClientId
+            End
+            
+            // Get the sub to sUserId
+            Get Subject of oJWT to tOptToken.sSubject
+            
+            Send OnGetUserInfo tOptToken.sSubject (&tUserInfo)
+            
+            Send OnGetSubjectName tUserInfo (&sUsername)
+            Move sUsername to tOptToken.sUsername
+            
+            Get Expiration  of oJWT to tOptToken.ubiExp
+            Get IssuedAt    of oJWT to tOptToken.ubiIat
+            Get NotBefore   of oJWT to tOptToken.ubiNbf            
+            Get Audience    of oJWT to tOptToken.sAudience
+            
+            Move (StrSplitToArray("exp,iat,iss,jti,nbf,sub", ',')) to asBlacklistMembers
+            Move (MemberCount(oJwt) -1) to iIndexTo
+            
+            //Iterate over all the members and add them to the claims, if they didn't serve their purpose already.
+            For iIndex from 0 to iIndexTo
+                Get MemberNameByIndex of oJWT iIndex to tSearch.sName
+                If (BinarySearchArray(tSearch.sName, asBlacklistMembers) = -1) Begin // Not in blacklist
+                    If (BinarySearchArray(tSearch, tOptToken.atCustomClaims) = -1) Begin // Not in customclaims yet, basically used for making the list binary sorted
+                        Move (BinarySearchInsertPos()) to iSearchIndex
+                        Get MemberValue of oJWT tSearch.sName to tSearch.sValue
+                        Move (InsertInArray(tOptToken.atCustomClaims, iSearchIndex, tSearch)) to tOptToken.atCustomClaims
+                    End
+                End
+            Loop
+        End
+    End_Procedure
+    
+    // Returns a struct with information about a refresh token, for example wheter it is expired/revoked or not
+    { MethodType=Event }
+    Procedure OnGetRefreshTokenInfo String sJTI tOidcRefreshToken ByRef tRefreshToken
+        // Empty stub
+    End_Procedure
+    
+    // Returns a struct with information about a refresh token, for example wheter it is expired/revoked or not based on the access token that was provided together with the refresh token
+    { MethodType=Event }
+    Procedure OnGetRefreshTokenInfoByAccessJti String sAcessJTI tOidcRefreshToken ByRef tRefreshToken
+        // Empty stub
+    End_Procedure
+    
+    // Event to revoke refresh tokens (only a single refresh token i.e. when logging out)
+    { MethodType=Event }
+    Procedure OnTokenRevocation String sJTI
+        // Empty stub
+    End_Procedure
+    
+    // Event to revoke refresh tokens (based on family_id)
+    { MethodType=Event }
+    Procedure OnTokenFamilyRevocation String sJTI
+        // Empty stub
+    End_Procedure
+    
+    // Returns a list of scopes that are allowed to be requested by the given client
+    { MethodType=Event }
+    Procedure OnGetSupportedScopesByClient String sClientId String[] ByRef asScopes
+        // Empty stub
+    End_Procedure
+    
+    // Returns a list of scopes that are given by default if no scopes are supplied to the request
+    { MethodType=Event }
+    Procedure OnGetDefaultClientScopes String sClientId String[] ByRef asScopes
+        // Empty stub
+    End_Procedure
+    
+    // Returns a map of scopes and their associated claims
+    { MethodType=Event }
+    Procedure OnGetScopeToClaimsMap tOidcScopeClaimsMap[] ByRef atScopeClaimsMap
+        // Empty stub
+    End_Procedure
+    
+    // Returns the audience string the authorization server uses for itself
+    { MethodType=Event }
+    Procedure OnGetSystemAudience String ByRef sSystemAudience
+        // Empty stub
+    End_Procedure
+    
+    // Returns a map of token types and their associated claims
+    { MethodType=Event }
+    Procedure OnGetTokenToClaimsMap tOidcTokenClaimMap[] ByRef atMap String[] asOptRequestedScopes
+        tOidcTokenClaimMap tMap tEmpty
+        Integer iIndex iIndexTo
+        tOidcScopeClaimsMap[] atScopeClaimsMap
+
+        // ----- 1. ID TOKEN MAP (Dynamic) -----
+        Move C_OIDC_TOKEN_ID_TOKEN to tMap.iTokenType
+        Move C_OIDC_CLAIM_ISSUER      to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_SUBJECT     to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_AUDIENCE    to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_EXPIRY      to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_ISSUED_AT   to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_NONCE       to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_AUTH_TIME   to tMap.asClaims[-1]
+        
+        If (num_arguments > 1) Begin
+            Send OnGetScopeToClaimsMap (&atScopeClaimsMap)
+        
+            Move (SizeOfArray(asOptRequestedScopes) - 1) to iIndexTo        
+            For iIndex from 0 to iIndexTo
+                Send OnGetClaimsForScope atScopeClaimsMap asOptRequestedScopes[iIndex] (&tMap.asClaims)
+            Loop
+        End
+        
+        Move tMap to atMap[-1]
+        Move tEmpty to tMap
+    
+        // ----- 2. ACCESS TOKEN MAP (RFC 9068 / FAPI) -----
+        Move C_OIDC_TOKEN_ACCESS_TOKEN to tMap.iTokenType
+        Move C_OIDC_CLAIM_ISSUER       to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_SUBJECT      to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_AUDIENCE     to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_EXPIRY       to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_ISSUED_AT    to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_CLIENT_ID    to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_SCOPE        to tMap.asClaims[-1]
+        
+        Move tMap to atMap[-1]
+        Move tEmpty to tMap
+    
+        // ----- 3. REFRESH TOKEN MAP -----
+        Move C_OIDC_TOKEN_REFRESH_TOKEN to tMap.iTokenType
+        Move C_OIDC_CLAIM_ISSUER        to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_SUBJECT       to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_AUDIENCE      to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_EXPIRY        to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_ISSUED_AT     to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_CLIENT_ID     to tMap.asClaims[-1]
+        Move C_OIDC_CLAIM_SCOPE         to tMap.asClaims[-1]
+    
+        Move tMap to atMap[-1]
+    End_Procedure
+    
+    // Returns the base url of the application to create the necessary redirect urls
+    // NOTE: Shouldn't end on a slash but on the TLD
+    { MethodType=Event }
+    Procedure OnGetApplicationBaseUrl String ByRef sBaseUrl
+        // Empty stub
+    End_Procedure
+
+    { MethodType=Event }
+    Procedure OnGetAuthorizeUrl String ByRef sAuthUrl
+        String sBaseUrl sHandlerPath
+
+        // Base
+        Send OnGetApplicationBaseUrl (&sBaseUrl)
+        Send OidcEnsureTrailingSlash (&sBaseUrl)
+
+        // Handler path
+        Get psPath of (phoOidcHandler(Self)) to sHandlerPath
+        Send OidcEnsureTrailingSlash (&sHandlerPath)
+
+        // Concatenate it all + AUTHORIZE_ENDPOINT
+        Move (sBaseUrl + sHandlerPath + C_OIDC_ENDPOINT_AUTHORIZE) to sAuthUrl
+    End_Procedure
+
+    Function NormalizeAuthorizeContinueUrl String sContinue String sPromptToRemove Boolean ByRef bOk Returns String
+        String sAuthorizeUrl
+        Integer iAuthPos
+
+        Move False to bOk
+        Send OnGetAuthorizeUrl (&sAuthorizeUrl)
+        Move (Pos(Lowercase(sAuthorizeUrl), Lowercase(sContinue))) to iAuthPos
+        If (iAuthPos <> 1) Begin
+            Function_Return ""
+        End
+
+        // Recreate the URL with the expected casing; mismatched casing can affect cookies.
+        Move (sAuthorizeUrl + Right(sContinue, SizeOfString(sContinue) - SizeOfString(sAuthorizeUrl))) to sContinue
+
+        If (SizeOfString(sPromptToRemove) > 0) Begin
+            Get OidcUrlWithoutPrompt sContinue sPromptToRemove to sContinue
+        End
+
+        Move True to bOk
+        Function_Return sContinue
+    End_Function
+
+    Function CreateErrorRedirectUri String sRedirectUri String sError String sDescription String sState String sResponseMode String sOptErrorURI Returns String
+        String sErrorURI sMarker
+
+        If (num_arguments > 5) Begin
+            Move sOptErrorURI to sErrorURI
+        End
+
+        Get UrlEncode sRedirectUri False to sRedirectUri
+
+        // Use query response mode by default
+        Move "?" to sMarker
+        If (sResponseMode = C_OIDC_RESPONSE_MODE_FRAGMENT) Begin
+            Move "#" to sMarker
+        End
+
+        Send OidcAddUrlParam (&sRedirectUri) C_OIDC_PARAM_ERROR sError sMarker
+        Send OidcAddUrlParam (&sRedirectUri) C_OIDC_PARAM_ERROR_DESCRIPTION sDescription sMarker
+        If (SizeOfString(sErrorURI) > 0) Begin
+            Send OidcAddUrlParam (&sRedirectUri) C_OIDC_PARAM_ERROR_URI sErrorURI sMarker
+        End
+
+        // Did we have a state?
+        If (SizeOfString(sState) > 0) Begin
+            Send OidcAddUrlParam (&sRedirectUri) C_OIDC_PARAM_STATE sState sMarker
+        End
+
+        Function_Return sRedirectUri
+    End_Function
+
+    // Returns scope summaries and details used by the consent view
+    { MethodType=Event }
+    Procedure OnGetScopeSummaryDetail String sScope String ByRef sSummary String ByRef sDetail
+        // Empty stub
+    End_Procedure
+    
+    // Validates the session to be able to set session properties used later on
+    { MethodType=Event }
+    Procedure OnValidateSession
+        // Empty stub
+    End_Procedure
+    
+    // Logs out the current users session
+    { MethodType=Event }
+    Procedure OnLogoutSession
+        // Empty stub
+    End_Procedure
+    
+    // Returns scopes a specific user is authorized to have (based on roles, permissions, etc.)
+    { MethodType=Event }
+    Procedure OnGetUserAuthorizedScopes String sUserId String sClientId String[] ByRef asScopes
+        // Empty stub
+    End_Procedure
+        
+    // Helper procedure to generate a subject name shown in the consent view
+    { MethodType=Event }
+    Procedure OnGetSubjectName tOidcUserInfo tUserInfo String ByRef sName
+        String sFirst sLast sFullName sUsername
+        
+        Move tUserInfo.sFullName            to sFullName
+        Move tUserInfo.sGivenName           to sFirst
+        Move tUserInfo.sFamilyName          to sLast
+        Move tUserInfo.sPreferredUsername   to sUsername
+        
+        If (SizeOfString(sFullName) > 0) Begin
+            Move sFullName to sName
+        End
+        Else If (SizeOfString(sFirst) > 0 and SizeOfString(sLast) > 0) Begin
+            Move (sFirst * sLast) to sName
+        End
+        Else If (SizeOfString(sUsername) > 0) Begin
+            Move sUsername to sName
+        End
+    End_Procedure
+    
+    // Helper function to determine the claim's json type
+    { MethodType=Event }
+    Procedure OnGetClaimJsonType String sClaim Integer ByRef iJsonType
+        Integer iType
+        
+        Case Begin
+            Case (sClaim = C_OIDC_CLAIM_AUTH_TIME)
+            Case (sClaim = C_OIDC_CLAIM_EXPIRY)
+            Case (sClaim = C_OIDC_CLAIM_ISSUED_AT)
+                Move jsonTypeInteger to iType
+                Case Break
+            Case (sClaim = C_OIDC_CLAIM_EMAIL_VERIFIED)
+                Move jsonTypeBoolean to iType
+                Case Break
+            Case Else
+                Move jsonTypeString to iType
+        Case End
+        
+        Move iType to iJsonType
+    End_Procedure
+    
+    { MethodType=Event }
+    Procedure OnSaveConsentAudit tOidcConsentAudit tConsent
+        // Empty stub
+    End_Procedure
+    
+    { MethodType=Event }
+    Procedure OnSaveRequestAudit tOidcRequest tRequest
+        // Empty stub
+    End_Procedure
+    
+    Function GenerateTokensClientCredentials tOidcClient tClient String[] asScopes String ByRef sAccessToken UBigInt ByRef ubiExpiresAt Returns Integer
+        tNameValuePair[] atClaims atAccessTokenClaims
+        UBigInt ubiIat
+        Boolean bOk
+        String sScopes sSystemAudience sJti
+        
+        // Check client type
+        If (tClient.sClientType = C_OIDC_CLIENT_TYPE_PUBLIC) Begin
+            Function_Return C_OIDC_GENERATE_TOKENS_UNAUTHORIZED_CLIENT
+        End
+        
+        // Validate requested scopes
+        Get OidcValidateStringArray asScopes tClient.asAllowedScopes to bOk
+        If (not(bOk)) Begin
+            Function_Return C_OIDC_GENERATE_TOKENS_INVALID_SCOPE
+        End
+        
+        Get CurrentUnixTime to ubiIat
+        Move (ubiIat + tClient.iAccessTokenLifetime) to ubiExpiresAt
+        
+        // Resolve claims for access token
+        Send OnResolveScopesToClaims "" tClient.sClientId asScopes (&atClaims)
+        
+        // Filter to only contain default access token claims
+        Get FilterClaimsForToken C_OIDC_TOKEN_ACCESS_TOKEN True asScopes atClaims to atAccessTokenClaims
+        
+        // Add scopes as claim
+        Move (StrJoinFromArray(asScopes, C_OIDC_CHARACTER_SPACE)) to sScopes
+        Get AddTokenClaim C_OIDC_CLAIM_SCOPE sScopes atAccessTokenClaims to atAccessTokenClaims
+        
+        Get AddTokenClaim C_OIDC_CLAIM_EXPIRY ubiExpiresAt atAccessTokenClaims to atAccessTokenClaims
+        Get AddTokenClaim C_OIDC_CLAIM_JTI (RandomHexUUID()) atAccessTokenClaims to atAccessTokenClaims
+        
+        // Set azp (authorized party) to client_id
+        Get AddTokenClaim C_OIDC_CLAIM_AZP tClient.sClientId atAccessTokenClaims to atAccessTokenClaims
+        
+        Get GenerateToken of oJWT atAccessTokenClaims to sAccessToken
+        
+        Function_Return C_OIDC_GENERATE_TOKENS_SUCCESS
+    End_Function
+    
+    Function GenerateTokensAuthCode tOidcAuthorizationCodeInfo tCode String ByRef sIdToken String ByRef sAccessToken String ByRef sRefreshToken UBigInt ByRef ubiExpiresAt String sOptRequestedScopes Returns Integer
+        String[] asReqScopes asAllowedScopes asFinalScopes
+        Integer iRetVal iIndex iSearch
+        
+        // The upper limit is what has been consented to and agreed to
+        Move (StrSplitToArray(tCode.sScope, C_OIDC_CHARACTER_SPACE)) to asAllowedScopes
+        
+        If (num_arguments > 5 and SizeOfString(sOptRequestedScopes) > 0) Begin
+            Move (StrSplitToArray(sOptRequestedScopes, C_OIDC_CHARACTER_SPACE)) to asReqScopes
+            
+            // Forgiving logic: only keep wat is in allowed scopes
+            Get OidcIntersectStringArray asReqScopes asAllowedScopes to asFinalScopes 
+        End
+        Else Begin
+            Move (StrSplitToArray(tCode.sScope, C_OIDC_CHARACTER_SPACE)) to asFinalScopes
+        End
+ 
+        Send OnConsumeAuthCode tCode.sAuthCode    
+        
+        Get GenerateTokens tCode.sUserId tCode.sClientId asFinalScopes (&sIdToken) (&sAccessToken) (&sRefreshToken) (&ubiExpiresAt) "" tCode.sNonce to iRetVal
+        Function_Return iRetVal
+    End_Function
+    
+    Function GenerateTokensRefreshCode tOidcRefreshToken tRefreshToken String[] asScopes String ByRef sIdToken String ByRef sAccessToken String ByRef sRefreshToken UBigInt ByRef ubiExpiresAt tOidcExpiries tOptExpiries tOidcCustomClaims tOptCustomClaims Returns Integer
+        Integer iRetVal
+
+        If (num_arguments > 7) Begin
+            // Expiries + custom claims included
+            Get GenerateTokens tRefreshToken.sUserId tRefreshToken.sClientId asScopes   ;
+                               (&sIdToken) (&sAccessToken) (&sRefreshToken)             ;
+                               (&ubiExpiresAt) "" tRefreshToken.sFamilyId tOptExpiries tOptCustomClaims to iRetVal
+        End
+        Else If (num_arguments > 6) Begin
+            // Expiries included
+            Get GenerateTokens tRefreshToken.sUserId tRefreshToken.sClientId asScopes   ;
+                               (&sIdToken) (&sAccessToken) (&sRefreshToken)             ;
+                               (&ubiExpiresAt) "" tRefreshToken.sFamilyId tOptExpiries  to iRetVal
+        End
+        Else Begin
+            Get GenerateTokens tRefreshToken.sUserId tRefreshToken.sClientId asScopes   ;
+                               (&sIdToken) (&sAccessToken) (&sRefreshToken)             ;
+                               (&ubiExpiresAt) "" tRefreshToken.sFamilyId               to iRetVal
+        End
+
+        Function_Return iRetVal
+    End_Function
+
+    { Visibility=Private }
+    Function GenerateTokens String sUserId String sClientId String[] asScopes String ByRef sIdToken String ByRef sAccessToken String ByRef sRefreshToken UBigInt ByRef ubiExpiresAt String sOptFamilyId String sOptNonce tOidcExpiries tOptExpiries tOidcCustomClaims tOptCustomClaims Returns Integer
+        String sFamilyId sNonce sScopes sSystemAudience sJti sAccessJti
+        tNameValuePair[] atClaims atIdTokenClaims atAccessTokenClaims atRefreshTokenClaims
+        tNameValuePair tNvpSearch
+        Integer iIndex iIndexTo
+        UBigInt ubiUnixTime ubiIat ubiRefreshExpiry
+        Boolean bGenerateAccessToken bGenerateIdToken bGenerateRefreshToken bExpiryOverride
+        tOidcClient tClient
+        tOidcRefreshToken tRefreshToken
+        tOidcCustomClaims tCustomClaims
+
+        If (num_arguments > 7) Begin
+            Move sOptFamilyId to sFamilyId
+        End
+
+        If (num_arguments > 8) Begin
+            Move sOptNonce to sNonce
+        End
+
+        If (num_arguments > 9) Begin
+            Move True to bExpiryOverride
+        End
+
+        If (num_arguments > 10) Begin
+            Move tOptCustomClaims to tCustomClaims
+        End
+
+        // Resolve the claims with the requested scopes that have been validated
+        Send OnResolveScopesToClaims sUserId sClientId asScopes (&atClaims)
+        
+        // Get the issued at claim
+        Move C_OIDC_CLAIM_ISSUED_AT to tNvpSearch.sName
+        Move (SearchArray(tNvpSearch, atClaims)) to iIndex
+        If (iIndex = -1) Begin
+            // Invalid claims
+            Function_Return C_OIDC_GENERATE_TOKENS_SERVER_ERROR
+        End
+        Move atClaims[iIndex].sValue to ubiIat
+           
+        // Generate tokens (ID token only if scope contains "openid", refresh token only if scope contains "offline_access")
+        Move (SearchArray(C_OIDC_SCOPE_OPENID,         asScopes) >= 0) to bGenerateIdToken
+        Move (SearchArray(C_OIDC_SCOPE_OFFLINE_ACCESS, asScopes) >= 0) to bGenerateRefreshToken
+        
+        Send OnGetClientInfo sClientId (&tClient)
+        
+        Move True to bGenerateAccessToken // Change this to be dynamic if we decide to support the implicit flow later on
+        
+        // id_token (optional)
+        If (bGenerateIdToken) Begin
+            // Get id token claims
+            Get FilterClaimsForToken C_OIDC_TOKEN_ID_TOKEN bGenerateAccessToken asScopes atClaims to atIdTokenClaims
+            
+            // Inject system claims
+            If (bExpiryOverride and tOptExpiries.iIDTokenLifetime <> 0) Begin
+                Get AddTokenClaim C_OIDC_CLAIM_EXPIRY (ubiIat + tOptExpiries.iIDTokenLifetime) atIdTokenClaims to atIdTokenClaims
+            End
+            Else Begin
+                Get AddTokenClaim C_OIDC_CLAIM_EXPIRY (ubiIat + tClient.iIDTokenLifetime) atIdTokenClaims to atIdTokenClaims    
+            End
+            
+            // Override audience for id token to be the client id
+            Get AddTokenClaim C_OIDC_CLAIM_AUDIENCE tClient.sClientId atIdTokenClaims to atIdTokenClaims
+            
+            // Override JTI with new generated one (must be unique for each token)
+            Get AddTokenClaim C_OIDC_CLAIM_JTI (RandomHexUUID()) atIdTokenClaims to atIdTokenClaims
+           
+            If (SizeOfString(sNonce) > 0) Begin
+                Get AddTokenClaim C_OIDC_CLAIM_NONCE sNonce atIdTokenClaims to atIdTokenClaims
+            End
+            
+            Move (SizeOfArray(tCustomClaims.atIdClaims) - 1) to iIndexTo
+            For iIndex from 0 to iIndexTo
+                Get AddTokenClaim tCustomClaims.atIdClaims[iIndex].sName tCustomClaims.atIdClaims[iIndex].sValue atIdTokenClaims to atIdTokenClaims
+            Loop
+
+            Get GenerateToken of oJWT atIdTokenClaims to sIdToken
+        End
+        
+        // acccess_token
+        If (bGenerateAccessToken) Begin
+            Get FilterClaimsForToken C_OIDC_TOKEN_ACCESS_TOKEN bGenerateAccessToken asScopes atClaims to atAccessTokenClaims
+            // Inject system claims
+            If (bExpiryOverride and tOptExpiries.iAccessTokenLifetime <> 0) Begin
+                Move (ubiIat + tOptExpiries.iAccessTokenLifetime) to ubiExpiresAt
+            End
+            Else Begin
+                Move (ubiIat + tClient.iAccessTokenLifetime) to ubiExpiresAt
+            End
+            Get AddTokenClaim C_OIDC_CLAIM_EXPIRY ubiExpiresAt atAccessTokenClaims to atAccessTokenClaims
+             
+            // scopes (space separated)
+            Move (StrJoinFromArray(asScopes, C_OIDC_CHARACTER_SPACE)) to sScopes
+            Get AddTokenClaim C_OIDC_CLAIM_SCOPE sScopes atAccessTokenClaims to atAccessTokenClaims
+            
+            // client_id (azp = authorized party)
+            Get AddTokenClaim C_OIDC_CLAIM_AZP tClient.sClientId atAccessTokenClaims to atAccessTokenClaims
+            
+            // Override JTI with new generated one (must be unique for each token)
+            Move (RandomHexUUID()) to sAccessJti
+            Get AddTokenClaim C_OIDC_CLAIM_JTI sAccessJti atAccessTokenClaims to atAccessTokenClaims
+            
+            Move (SizeOfArray(tCustomClaims.atAccessClaims) - 1) to iIndexTo
+            For iIndex from 0 to iIndexTo
+                Get AddTokenClaim tCustomClaims.atAccessClaims[iIndex].sName tCustomClaims.atAccessClaims[iIndex].sValue atAccessTokenClaims to atAccessTokenClaims
+            Loop
+            
+            Get GenerateToken of oJWT atAccessTokenClaims to sAccessToken
+        End
+        
+        // refresh_token (optional)
+        If (bGenerateRefreshToken) Begin
+            Get FilterClaimsForToken C_OIDC_TOKEN_REFRESH_TOKEN bGenerateAccessToken asScopes atClaims to atRefreshTokenClaims
+            // Inject system claims
+            If (bExpiryOverride and tOptExpiries.iIDTokenLifetime <> 0) Begin
+                Move (ubiIat + tOptExpiries.iRefreshTokenLifetime) to ubiRefreshExpiry
+            End
+            Else Begin
+                Move (ubiIat + tClient.iRefreshTokenLifetime) to ubiRefreshExpiry
+            End
+            Get AddTokenClaim C_OIDC_CLAIM_EXPIRY ubiRefreshExpiry atRefreshTokenClaims to atRefreshTokenClaims
+            
+            // scopes
+            Get AddTokenClaim C_OIDC_CLAIM_SCOPE sScopes atRefreshTokenClaims to atRefreshTokenClaims
+            
+            // Set audience to ourself (By default we use the base URL)
+            Send OnGetSystemAudience (&sSystemAudience)
+            Get AddTokenClaim C_OIDC_CLAIM_AUDIENCE sSystemAudience atRefreshTokenClaims to atRefreshTokenClaims
+            
+            // Override JTI with new generated one (must be unique for each token)
+            Get RandomHexUUID to sJti
+            Get AddTokenClaim C_OIDC_CLAIM_JTI sJti atRefreshTokenClaims to atRefreshTokenClaims
+            
+            // Generate random hex UUID if we don't have one yet
+            If (SizeOfString(sFamilyId) = 0) Begin
+                Get RandomHexUUID to sFamilyId
+            End
+            
+            Move (SizeOfArray(tCustomClaims.atRefreshClaims) - 1) to iIndexTo
+            For iIndex from 0 to iIndexTo
+                Get AddTokenClaim tCustomClaims.atRefreshClaims[iIndex].sName tCustomClaims.atRefreshClaims[iIndex].sValue atRefreshTokenClaims to atRefreshTokenClaims
+            Loop
+            
+            // Save to DB
+            Move sJti               to tRefreshToken.sJTI
+            Move sClientId          to tRefreshToken.sClientId
+            Move sUserId            to tRefreshToken.sUserId
+            Move ubiIat             to tRefreshToken.ubiIat
+            Move ubiRefreshExpiry   to tRefreshToken.ubiExp
+            Move 0                  to tRefreshToken.bRevoked
+            Move 0                  to tRefreshToken.bUsed
+            Move sFamilyId          to tRefreshToken.sFamilyId
+            Move sAccessJti         to tRefreshToken.sAccessJti
+            Send OnCreateRefreshToken tRefreshToken
+            
+            Get GenerateToken of oJWT atRefreshTokenClaims to sRefreshToken
+        End   
+        
+        Function_Return C_OIDC_GENERATE_TOKENS_SUCCESS
+    End_Function
+    
+    // Helper functions to get the index/value of custom claims
+    Function CustomClaimIndex String sClaim tNameValuePair[] atCustomClaims Returns Integer
+        tNameValuePair tSearch
+        Move sClaim to tSearch.sName
+        Function_Return (SearchArray(tSearch, atCustomClaims))
+    End_Function
+    
+    Function CustomClaimValue String sClaim tNameValuePair[] atCustomClaims Returns String
+        Integer iIndex
+        String sResult
+        Get CustomClaimIndex sClaim atCustomClaims to iIndex
+        If (iIndex <> -1) Begin
+            Move atCustomClaims[iIndex].sValue to sResult
+        End
+        Function_Return sResult
+    End_Function
+    
+    Procedure ProgramError String sErr
+        Error DFERR_PROGRAM sErr
+    End_Procedure
+    
+    Procedure OperatorError String sErr
+        Error DFERR_OPERATOR sErr
+    End_Procedure
+
+    Procedure MissingHandleError String sHandles String sMsgName 
+        String[] asHandles
+        Integer iIndex iSize
+        
+        Move (StrSplitToArray(sHandles, C_OIDC_CHARACTER_SPACE)) to asHandles
+        Move "" to sHandles
+        Move (SizeOfArray(asHandles)) to iSize
+        
+        For iIndex from 0 to (iSize - 1)
+            Move (sHandles * asHandles[iIndex]) to sHandles
+            // Add comma for everyting but the last item
+            If (iIndex < iSize - 1) ;
+                Move (sHandles + ",") to sHandles
+            Else ;
+                Move (sHandles * "&") to sHandles
+        Loop
+
+        Error DFERR_PROGRAM (SFormat("Invalid value(s) for handle(s) %1 in %2 of a cOidcProvider implementation.", sHandles, sMsgName))
+    End_Procedure
+
+    Procedure ValidationError Handle hHandle String sMsgName
+        String sTable
+
+        Get SQLStrFileName of hHandle to sTable
+        Error DFERR_PROGRAM (SFormat("Error during Request_Validate on table %1 in %2 of a cOidcProvider implementation.", sTable, sMsgName))
+    End_Procedure
+
+    Procedure SaveError Handle hHandle String sMsgName
+        String sTable
+         
+        Get SQLStrFileName of hHandle to sTable
+        Error DFERR_PROGRAM (SFormat("Error during Request_Save on table %1 in %2 of a cOidcProvider implementation.", sTable, sMsgName))
+    End_Procedure
+
+    // ToDo: Should the message names become constants?
+
+    Procedure SaveData Handle hoDD String sMsgName
+        Boolean iRetVal
+        
+        Get Request_Validate of hoDD to iRetVal
+        If (iRetVal) Begin
+            Send ValidationError hoDD sMsgName
+            Procedure_Return
+        End
+        
+        Move False to Err
+        Send Request_Save of hoDD
+        If (Err) Begin
+            Send SaveError hoDD sMsgName
+        End
+    End_Procedure
+
+    // Helper function to validate redirect uri's
+    { Visibility=Private }
+    Function ValidateRedirectUri tOidcClient tClient String sRedirectUri Returns Boolean
+        Integer iIndex iItemCount
+        Boolean bRetVal
+        
+        Move (SizeOfArray(tClient.asRedirectURIs)) to iItemCount
+        
+        For iIndex from 0 to (iItemCount - 1)
+            // If localhost/127.0.0.1 remove the port (we ignore the port)
+            Get OidcRemoveLocalPort sRedirectUri to sRedirectUri
+            
+            // Exact match?
+            If (tClient.asRedirectURIs[iIndex] = sRedirectUri) Begin
+                Move True to bRetVal
+                Move iItemCount to iIndex
+            End
+        Loop
+        
+        Function_Return bRetVal
+    End_Function
+
+    // Helper procedure to populate the ScopeClaimsMap by passing a scope and a claims string that is space-separated
+    // bOptIsSystemScope is used for default claim resolving which can be overridden by the developer
+    { Visibility=Private }
+    Procedure AddScopeClaimsMap tOidcScopeClaimsMap[] ByRef tScopeClaimsMap String sScope String sClaims Boolean bOptIsSystemScope Boolean bOptAudience
+        Integer iScopeIndex iIndex iClaimIndex
+        tOidcScopeClaimsMap tSearch
+        String sSearch sClaim sAudience
+        String[] asClaims
+        
+        Move sScope to tSearch.sScope
+        
+        If (num_arguments > 3) ;
+            Move bOptIsSystemScope to tSearch.bIsSystemScope
+        
+        If (num_arguments > 4) ;
+            Move bOptAudience to tSearch.sAudience
+        
+        Move (SearchArray(tSearch, tScopeClaimsMap)) to iScopeIndex
+        If (iScopeIndex = -1) Begin
+            Move (SizeOfArray(tScopeClaimsMap)) to iScopeIndex
+            Move tSearch to tScopeClaimsMap[iScopeIndex]
+        End
+        
+        Move (StrSplitToArray(sClaims, C_OIDC_CHARACTER_SPACE)) to asClaims
+        
+        For iIndex from 0 to (SizeOfArray(asClaims) - 1)
+            Move asClaims[iIndex] to sClaim
+            Move (SearchArray(sClaim, tScopeClaimsMap[iScopeIndex].asAllowedClaims)) to iClaimIndex
+            If (iClaimIndex = -1) Begin
+                // Add the claim if it doesn't exist yet
+                Move (SizeOfArray(tScopeClaimsMap[iScopeIndex].asAllowedClaims)) to iClaimIndex
+                Move sClaim to tScopeClaimsMap[iScopeIndex].asAllowedClaims[iClaimIndex]
+            End
+        Loop
+    End_Procedure
+
+    // Helper function to resolve system claims
+    { Visibility=Private }
+    Function ResolveSystemClaim String sClaim tOidcClient tClient tOidcUserInfo tUserInfo Returns String
+        String sResult sIssuer
+
+        Case Begin
+            Case (sClaim = C_OIDC_CLAIM_AUDIENCE)
+                Move tClient.sClientId to sResult
+                Case Break
+            Case (sClaim = C_OIDC_CLAIM_AUTH_TIME)
+                If (not(IsNullDateTime(tUserInfo.dtLastLogin))) Begin
+                    Get DateTimeToUnixTime (Oidc_ConvertDateTimeToUtc(Self, tUserInfo.dtLastLogin)) to sResult
+                End
+                Case Break                        
+            
+            Case (sClaim = C_OIDC_CLAIM_EMAIL)
+                Move tUserInfo.sEmail to sResult
+                Case Break                        
+            
+            Case (sClaim = C_OIDC_CLAIM_EMAIL_VERIFIED)
+                If (tUserInfo.bEmailVerified) ;
+                    Move "true" to sResult
+                Else ;
+                    Move "false" to sResult
+                Case Break                        
+            
+            Case (sClaim = C_OIDC_CLAIM_FAMILY_NAME)
+                Move tUserInfo.sFamilyName to sResult
+                Case Break                        
+            
+            Case (sClaim = C_OIDC_CLAIM_GIVEN_NAME)
+                Move tUserInfo.sGivenName to sResult
+                Case Break  
+                
+            Case (sClaim = C_OIDC_CLAIM_MIDDLE_NAME)
+                Move tUserInfo.sMiddleName to sResult
+                Case Break                      
+            
+            Case (sClaim = C_OIDC_CLAIM_ISSUED_AT)
+                Get CurrentUnixTime to sResult
+                Case Break                        
+            
+            Case (sClaim = C_OIDC_CLAIM_ISSUER)
+                Send OnGetApplicationBaseUrl (&sIssuer)
+                Send OidcEnsureTrailingSlash (&sIssuer)
+                Move sIssuer to sResult
+                Case Break                        
+            
+            Case (sClaim = C_OIDC_CLAIM_NAME)
+                Move tUserInfo.sFullName to sResult
+                Case Break                        
+            
+            Case (sClaim = C_OIDC_CLAIM_NICKNAME)
+            Case (sClaim = C_OIDC_CLAIM_PREF_USERNAME)
+                Move tUserInfo.sPreferredUsername to sResult
+                Case Break
+            
+            Case (sClaim = C_OIDC_CLAIM_PICTURE)
+                Move tUserInfo.sPicture to sResult
+                Case Break
+            
+            Case (sClaim = C_OIDC_CLAIM_PROFILE)
+                Move tUserInfo.sProfile to sResult
+                Case Break
+            
+            Case (sClaim = C_OIDC_CLAIM_SUBJECT)
+                Move tUserInfo.sSubject to sResult
+                Case Break
+            
+            Case (sClaim = C_OIDC_CLAIM_UPDATED_AT)
+                If (not(IsNullDateTime(tUserInfo.dtLastUpdate))) Begin
+                    Get DateTimeToUnixTime tUserInfo.dtLastUpdate to sResult
+                End
+                Case Break
+                
+            Case Else
+                // Else we do nothing, keep it null/empty
+        Case End
+        
+        Function_Return sResult
+    End_Function
+
+    // Helper function to validate given consent
+    { Visibility=Private }
+    Function ValidateConsent tOidcClient tClient String[] asRequestedScopes Returns Boolean
+        String sUserId
+        String[] asAllowedScopes
+        Boolean bOk
+
+        Send OnGetUserId (&sUserId)
+        Send OnGetConsentedScopesByClientId sUserId tClient.sClientId (&asAllowedScopes)
+        
+        Get OidcValidateStringArray asRequestedScopes asAllowedScopes to bOk
+        
+        Function_Return bOk
+    End_Function
+    
+    // Helper function that maps scopes to individual claims
+    { Visibility=Private }
+    Procedure OnGetClaimsForScope tOidcScopeClaimsMap[] atMap String sScope String[] ByRef asClaims
+        Integer iMapsEnd iMapIndex iClaimIndex iClaimEnd 
+        String[] asScopeClaims
+        
+        Move (SizeOfArray(atMap) -1) to iMapsEnd
+        
+        For iMapIndex from 0 to iMapsEnd
+            If (Lowercase(atMap[iMapIndex].sScope) = Lowercase(sScope)) Begin
+                Move atMap[iMapIndex].asAllowedClaims to asScopeClaims
+                Move (SizeOfArray(asScopeClaims) - 1) to iClaimEnd
+                
+                For iClaimIndex from 0 to iClaimEnd
+                    // Use a helper to avoid duplicates (defined below)
+                    Send AddUniqueClaim asScopeClaims[iClaimIndex] (&asClaims)
+                Loop
+                
+                Move iMapsEnd to iMapIndex // Found it, stop looking
+            End
+        Loop
+    End_Procedure
+    
+    // Helper function for adding unique claims
+    { Visibility=Private }
+    Procedure AddUniqueClaim String sClaim String[] ByRef asClaims
+        Integer iSearch
+        Move (SearchArray(sClaim, asClaims)) to iSearch
+        If (iSearch = -1) Begin
+            Move sClaim to asClaims[SizeOfArray(asClaims)]
+        End
+    End_Procedure
+
+    // Helper function to search and change the value of a claim in a tNameValuePair[]
+    { Visibility=Private }
+    Function AddTokenClaim String sClaim String sValue tNameValuePair[] atClaims Returns tNameValuePair[]
+        tNameValuePair tSearch
+        Integer iIndex
+        
+        Move sClaim to tSearch.sName
+        Move (SearchArray(tSearch, atClaims)) to iIndex
+        If (iIndex = -1) Begin
+            Move (SizeOfArray(atClaims)) to iIndex
+            Move sClaim to atClaims[iIndex].sName
+        End
+        Move sValue to atClaims[iIndex].sValue
+        
+        Function_Return atClaims
+    End_Function
+
+    // Helper function to filter claims on token type
+    { Visibility=Private }
+    Function FilterClaimsForToken Integer iTokenType Boolean bAccessTokenAvailable String[] asRequestedScopes tNameValuePair[] atAllClaims Returns tNameValuePair[]
+        tOidcTokenClaimMap[] atMaps
+        tOidcTokenClaimMap   tMap
+        tNameValuePair[]     atResult
+        Integer iMaps iMapIndex iClaimIndex iSearch 
+        String sClaim
+        Boolean bIncludeRequestedScopeClaims
+    
+        // Scope-derived identity claims belong in the ID token only when there is no
+        // access token available for the client to retrieve them through the UserInfo path.
+        Move (iTokenType = C_OIDC_TOKEN_ID_TOKEN and not(bAccessTokenAvailable)) to bIncludeRequestedScopeClaims
+        
+        If (bIncludeRequestedScopeClaims) Begin
+            Send OnGetTokenToClaimsMap (&atMaps) asRequestedScopes
+        End
+        Else Begin
+            Send OnGetTokenToClaimsMap (&atMaps)
+        End
+        
+        Move (SizeOfArray(atMaps)) to iMaps
+    
+        // find matching map
+        For iMapIndex from 0 to (iMaps -1)
+            If (atMaps[iMapIndex].iTokenType = iTokenType) Begin
+                Move atMaps[iMapIndex] to tMap
+                Move iMaps to iMapIndex // Leave the for loop
+            End
+        Loop
+        
+        // filter
+        For iClaimIndex from 0 to (SizeOfArray(atAllClaims)-1)
+            Move atAllClaims[iClaimIndex].sName to sClaim
+            
+            Move (SearchArray(sClaim, tMap.asClaims)) to iSearch
+            If (iSearch <> -1) Begin
+                Move atAllClaims[iClaimIndex] to atResult[-1]
+            End
+        Loop
+    
+        Function_Return atResult
+    End_Function
+
+
+    Procedure IgnoreError Integer iErrNum
+        Integer[] iaIgnoredErrors
+        Integer iIndex
+        
+        Get piaIgnoredErrors to iaIgnoredErrors
+        
+        Move (BinarySearchArray(iErrNum, iaIgnoredErrors)) to iIndex
+        If (iIndex = -1) Begin
+            Move (BinarySearchInsertPos()) to iIndex
+            Move (InsertInArray(iaIgnoredErrors, iIndex, iErrNum)) to iaIgnoredErrors
+        End
+        
+        Set piaIgnoredErrors to iaIgnoredErrors
+    End_Procedure
+
+
+    { Visibility=Private }
+    Function IsIgnoredError Integer iErrNum Returns Boolean
+        Integer[] iaIgnoredErrors
+        Integer iIndex
+        
+        Get piaIgnoredErrors to iaIgnoredErrors
+        
+        Move (BinarySearchArray(iErrNum, iaIgnoredErrors)) to iIndex
+        Function_Return (iIndex <> -1)
+    End_Function
+    
+
+    
+        // This version only works for sorted arrays, if you simply used this function for every scope added this will work.
+//    Procedure AddScopeClaimsMap tOidcScopeClaimsMap[] ByRef tScopeClaimsMap String sScope String sClaim
+//        Integer iScopeIndex iArg iClaimIndex
+//        tOidcScopeClaimsMap tSearch
+//        String sSearch
+//        
+//        Move sScope to tSearch.sScope
+//        
+//        Move (BinarySearchArray(tSearch, tScopeClaimsMap)) to iScopeIndex
+//        If (iScopeIndex = -1) Begin
+//            Move (BinarySearchInsertPos()) to iScopeIndex
+//            Move (InsertInArray(tScopeClaimsMap, iScopeIndex, tSearch)) to tScopeClaimsMap
+//        End
+//        
+//        For iArg from 3 to num_arguments
+//            Move iArg& to sClaim
+//            Move (BinarySearchArray(sClaim, tScopeClaimsMap[iScopeIndex].asAllowedClaims)) to iClaimIndex
+//            If (iClaimIndex = -1) Begin
+//                // Add the claim if it doesn't exist yet
+//                Move (BinarySearchInsertPos()) to iClaimIndex
+//                Move (InsertInArray(tScopeClaimsMap[iScopeIndex].asAllowedClaims, iClaimIndex, sClaim)) to tScopeClaimsMap[iScopeIndex].asAllowedClaims
+//            End
+//        Loop
+//    End_Procedure
+    
+    { Visibility=Private }
+    Procedure Error_Report Integer iErrNum Integer iErrLine String sErrText
+        Boolean bIsIgnored
+        
+        // Ignore expected errors
+        Get IsIgnoredError iErrNum to bIsIgnored
+        If (bIsIgnored) ;
+            Procedure_Return
+        
+       // ToDo: do some logging here
+       // Default error handling
+        Send Error_Report of ghoErrorHandler iErrNum iErrLine sErrText 
+    End_Procedure
+End_Class

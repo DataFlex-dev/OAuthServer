@@ -1,0 +1,138 @@
+Oidc Spec DataFlex Account
+
+**Discovery endpoint**
+Used to discover every needed endpoint, and it will tell clients what scopes and claims are supported etc.
+GET /.well-known/openid-configuration HTTP/1.1
+Host: account.dataflex.dev
+
+Response will be like*:
+```
+{
+  "issuer": "{BASE_URL}",
+  "authorization_endpoint": "{BASE_URL}/{HANDLER_PATH}/authorize",
+  "token_endpoint": "{BASE_URL}/{HANDLER_PATH}/token",
+  "userinfo_endpoint": "{BASE_URL}/{HANDLER_PATH}/userinfo",
+  "jwks_uri": "{BASE_URL}/.well-known/jwks.json",
+  "scopes_supported": [
+    "A STRING FOR EVERY SUPPORTED SCOPE"
+  ],
+  "response_types_supported": [
+    "code"
+  ],
+  "response_modes_supported": [
+    "query",
+    "fragment"
+  ],
+  "grant_types_supported": [
+    "authorization_code",
+    "refresh_token"
+  ],
+  "subject_types_supported": [
+    "public"
+  ],
+  "id_token_signing_alg_values_supported": [
+    "EdDSA",
+    "RS256"
+  ],
+  "claims_supported": [
+    "A STRING FOR EVERY SUPPORTED CLAIM"
+  ]
+}
+```
+
+*BASE_URL will be "https://account.dataflex.dev" and the HANDLER_PATH will be "oidc/v1"
+
+**Authorization endpoint**
+The first request from the client should be to the authorization endpoint using a HTTP 302 (Found) response code:
+
+	HTTP/1.1 302 Found
+	Location: https://account.dataflex.dev/oidc/v1/authorize?
+				response_type=code
+				&scope=openid%20profile%20email%20offline_access
+				&client_id={UUID_FOR_PACKAGE_MANAGER}
+				&state={STATE}
+				&redirect_uri=http%3A%2F%2Flocalhost%3A55624%2Fcallback
+				&code_challenge_method=S256
+				&code_challenge=6m4wJ-n9jSg2peHr7EOnOd_c7wg0AQJEuBGo3N7je8w
+				&state=my_example_state
+Host: account.dataflex.dev
+
+The only supported response_type is "code" this is also the standard way in the industry and the most secure.
+The library supports more parameters like "nonce", "prompt", "response_mode" etc.
+"code_challenge" should be a url encoded SHA-256 hash of a high-entropy random string. Example: UrlEncode(Sha256("hallo_bram_dit_is_veilig")) = "6m4wJ-n9jSg2peHr7EOnOd_c7wg0AQJEuBGo3N7je8w". Note that the original input for the code challenge can only include characters as defined in RFC7636 chapter 4.1:
+ABNF for "code_verifier" is as follows.
+
+code-verifier = 43*128unreserved
+unreserved = ALPHA / DIGIT / "-" / "." / "_" / "~"
+ALPHA = %x41-5A / %x61-7A
+DIGIT = %x30-39
+
+The code_challenge could also be plain-text when passing "code_challenge_method=plain" but this is ofcourse not safe. So whenever the client is capable of SHA-256 hashing, it should use that.
+
+The return for the authorization endpoint (if authenticated and consent is given) is as follows:
+	HTTP/1.1 302 Found
+	Location: http://localhost:55624/callback?
+			  code={YOUR_AUTHORIZATION_CODE}
+			  &state=my_example_state
+			  
+If there is errors or the user denies consent there could be an error response, this will be a 302 (Found) redirect if the authorization server was able to validate the callback url.
+If it wasn't able to validate it the server can't assure a safe redirect so it will simply return a HTML page showing the error to the end-user.
+
+The error response is as follows:
+	HTTP/1.1 302 Found
+	Location: http://localhost:55624/callback?
+				error=invalid_request
+				&error_description=
+				Unsupported%20response_type%20value
+				&state=my_example_state
+
+	
+**Token endpoint**
+The token endpoint is used to retrieve the tokens and refresh expired access tokens by using a refresh token. 
+For the server to determine what action you are willing to do there is a "grant_type" parameter with the possible values "authorization_code" and "refresh_token".
+
+	POST /token HTTP/1.1
+	Host: account.dataflex.dev
+	Content-Type: application/x-www-form-urlencoded
+	Authorization: Basic (Base64Encode({CLIENT_ID}:{CLIENT_SECRET}))
+	
+	grant_type=authorization_code&code={YOUR_AUTHORIZATION_CODE}
+		&redirect_uri=http%3A%2F%2Flocalhost%3A55624%2Fcallback
+		&code_verifier=hallo_bram_dit_is_veilig
+  
+The token response will be in the following format:
+
+	HTTP/1.1 200 OK
+	Content-Type: application/json
+	Cache-Control: no-store
+	
+	{
+	"access_token": "{JWT_ACCESS_TOKEN}",
+	"token_type": "Bearer",
+	"refresh_token": "{JWT_REFRESH_TOKEN}",
+	"expires_in": {ACCESS_TOKEN_EXPIRY_IN_SECONDS},
+	"id_token": "{JWT_ID_TOKEN}"
+	}
+
+The refresh_token and id_token are optional and are only returned when the respective scopes are requested during the initial authorization request.
+The refresh_token is returned when the "offline_access" scope is requested, while the id_token is returned when the "openid" scope is requested.
+It is recommended to always use "openid", while "offline_access" is optional if the client wishes to have a long-lived session that can be refreshed.
+
+Error responses for the token endpoint use JSON responses as follows:
+	HTTP/1.1 400 Bad Request
+	Content-Type: application/json
+	
+	{
+	"error": "invalid_grant",
+	"error_description": "The authorization code is invalid or expired"
+	}
+
+Now we've seen the example of submitting an authorization code with the grant_type "authorization_code" we want to be able to refresh our token set. This can be done using the grant_type "refresh_token".
+	POST /token HTTP/1.1
+	Host: account.dataflex.dev
+	Content-Type: application/x-www-form-urlencoded
+	Authorization: Basic (Base64Encode({CLIENT_ID}:{CLIENT_SECRET}))
+	
+	grant_type=refresh_token&refresh_token={YOUR_REFRESH_TOKEN}
+	
+The response will be the same format as the response when grant_type is "authorization_code"

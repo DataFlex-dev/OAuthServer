@@ -1,0 +1,447 @@
+Use cWebSessionManagerStandard.pkg
+Use Oidc\cOidcProvider.pkg
+Use Oidc\Constants\OidcErrorConstants.pkg
+Use Oidc\Constants\OidcParameterConstants.pkg
+Use Oidc\Structs\tOidcJsonWebToken.pkg
+Use Oidc\Structs\tOidcUserInfo.pkg
+Use Oidc\Structs\tOidcCustomClaims.pkg
+Use Oidc\Structs\tOidcExpiries.pkg
+
+{ HelpTopic=cWebSessionManagerStandard }
+Class cOidcSessionManager is a cWebSessionManager
+    Procedure Construct_Object
+        Handle hoObj
+        Forward Send Construct_Object
+        
+        Property String psAccessTokenCookieName     "dfWebAppAccess"
+        Property String psRefreshTokenCookieName    "dfWebAppRefresh"
+        Property String psWebappClientId            "" // Used to define the client ID the webapp itself uses (be sure to register it or the logic won't work)
+        Property Handle phoOidcProvider             0
+        
+        // Password hashing
+        Property Boolean pbPasswordHashing True
+        
+        Property Handle phoCrypto 0   // Handle to the Cryptographer
+        Get CreateNamed (RefClass(cPasswordHasher)) 'oCrypto' to hoObj
+        Set phoCrypto to hoObj
+        
+        Property tOidcJsonWebToken ptCurrentToken
+        Property tOidcUserInfo ptCurrentUser
+        
+        // SessionManager properties
+        Property String psAccessToken ""
+        Property String psRefreshToken ""
+        
+        // Session properties
+        Property String psUsername  ""
+        Property String psLoginName "" 
+        
+        // Setup
+        Set piSessionTimeout to 180 // Default to 3 hours
+    End_Procedure
+
+    Procedure End_Construct_Object
+        String sCookiePath
+        Handle hoOidcProvider
+        
+        Get psSessionCookiePath to sCookiePath
+        
+        If (SizeOfString(sCookiePath) = 0) Begin
+            Error DFERR_PROGRAM "psSessionCookiePath must be set for cOidcSessionManager"
+            Procedure_Return
+        End
+        
+        Forward Send End_Construct_Object
+    End_Procedure
+    
+    Function ProviderHandle Returns Handle
+        Handle hoObj
+        
+        Get phoOidcProvider to hoObj
+        If (hoObj = 0) Begin
+            Error DFERR_PROGRAM "Missing handle to cOidcProvider instance for cOidcSessionManager"
+        End
+        
+        Function_Return hoObj
+    End_Function
+    
+    // Validates a session by checking expiration, audience, issuer etc
+    // In case of an expired session it will check if there is a refresh token
+    // If refresh token is valid we need to generate a new pair and consume the old refresh token
+    Function ValidateSession String sSessionKey Returns Boolean
+        String sRefreshToken sAccessToken sTokenSK
+        Handle hoOidcProvider
+        Boolean bOk
+        tOidcJsonWebToken tToken
+        tOidcUserInfo tUserInfo
+        tOidcRefreshToken tRefreshTokenInfo
+        
+        // Clear session props
+        Send UpdateSessionProperties True
+    
+        // Get provider        
+        Get ProviderHandle to hoOidcProvider
+        If (hoOidcProvider = 0) ;
+            Function_Return False // Fatal error
+        
+        // Get cookies
+        Set psAccessToken to ""
+        Set psRefreshToken to ""
+        Get GetCookie (psAccessTokenCookieName(Self)) to sAccessToken
+        Get GetCookie (psRefreshTokenCookieName(Self)) to sRefreshToken
+        Set psAccessToken to sAccessToken
+        Set psRefreshToken to sRefreshToken
+        
+        If (SizeOfString(sAccessToken) = 0) Begin
+            // Try silent refresh
+            Get RefreshSession sRefreshToken to bOk
+            Function_Return True // For the webapp call to continue we need to return true here, the session is valid IsLoggedIn will return false since the properties are reset above
+        End
+            
+        // Validate JWT
+        Send OnValidateToken of hoOidcProvider sAccessToken (&bOk) (&tToken)
+        
+        If (bOk) Begin
+            // Check if not revoked/used which means the current access token is not valid anymore
+            Send OnGetRefreshTokenInfoByAccessJti of hoOidcProvider tToken.sJTI (&tRefreshTokenInfo)
+            If (tRefreshTokenInfo.bUsed or tRefreshTokenInfo.bRevoked) Begin
+                Function_Return False // Invalid session
+            End
+            
+            Get CustomClaimValue of hoOidcProvider C_OIDC_CUSTOM_CLAIM_SESSION_KEY tToken.atCustomClaims to sTokenSK
+            If (sTokenSK <> sSessionKey) Begin
+                // Access token is set, we expect the sSessionKey to be the same as the access tokens' jti
+                Function_Return False // sSessionKey (Cookie "dfWebApp") is not the same as the access token (Cookie "dfWebAppAccess"), this could only occur when a user tampers with the cookie values
+            End
+            Send OnGetUserInfo of hoOidcProvider tToken.sSubject (&tUserInfo)
+            
+            Set psSessionKey    to sTokenSK
+            Set ptCurrentToken  to tToken
+            Set ptCurrentUser   to tUserInfo
+            
+            Send UpdateSessionProperties False
+            Function_Return True
+        End
+        
+        // If JWT validation fails (e.g. expired), attempt silent refresh
+        Get RefreshSession sRefreshToken to bOk
+        Function_Return True // For the webapp call to continue we need to return true here, the session is valid IsLoggedIn will return false since the properties are reset above
+    End_Function
+    
+    Function CreatePasswordHash String sPassword String ByRef sHash Returns Boolean
+        If (not(pbPasswordHashing(Self))) Begin
+            Move sPassword to sHash
+            Function_Return True
+        End
+        
+        If (not(CreatePasswordHash(phoCrypto(Self), sPassword, &sHash))) Begin
+            Function_Return False
+        End
+        Move ("V1$" + sHash) to sHash
+        Function_Return True
+    End_Function
+    
+    Function VerifyPasswordHash String sUserPassword String sEnteredPassword Boolean ByRef bShouldUpgrade Returns Boolean
+        If (not(pbPasswordHashing(Self))) Begin
+            Move False to bShouldUpgrade
+            Function_Return (sUserPassword = sEnteredPassword)
+        End
+        
+        String sVersion
+        Move (Left(sUserPassword, 3)) to sVersion
+        If (sVersion = "V1$") Begin
+            If (num_arguments > 2) Move False to bShouldUpgrade
+            Function_Return (VerifyPasswordHash(phoCrypto(Self), sEnteredPassword, Right(sUserPassword, Length(sUserPassword) - 3)))
+        End
+        Else Begin
+            If (num_arguments > 2) Move True to bShouldUpgrade
+            Function_Return False
+        End
+    End_Function
+    
+    Function UserLogin String sLoginName String sPassword Boolean bOptRememberMe Returns Boolean
+        Boolean bUpgrade bOk bRememberMe
+        Handle hoOidcProvider
+        String sUserId sIdToken sAccessToken sRefreshToken sSessionKey
+        tOidcUserInfo tUserInfo
+        tOidcClient tClient
+        String[] asScopes
+        UBigInt ubiExpiresAt
+        Integer iRetVal iExpiration iSearchIndex iSessionTimeout
+        tOidcJsonWebToken tToken
+        tOidcExpiries tExpiries
+        tOidcCustomClaims tCustomClaims
+        
+        If (num_arguments > 2) Begin
+            Move bOptRememberMe to bRememberMe
+        End
+        
+        Send UpdateSessionProperties True
+        
+        Get ProviderHandle to hoOidcProvider
+        If (hoOidcProvider = 0) ;
+            Function_Return False
+            
+        Send OnGetUserIdFromLoginName of hoOidcProvider sLoginName (&sUserId)                
+        Send OnGetUserInfo of hoOidcProvider sUserId (&tUserInfo)
+        
+        If (tUserInfo.sSubject = sUserId) Begin
+            Set ptCurrentUser to tUserInfo
+            Get VerifyPasswordHash tUserInfo.sHashedPassword (Trim(sPassword)) (&bUpgrade) to bOk
+            
+            If (bOk) Begin
+                // Upgrade the password
+                If (bUpgrade) Begin
+                    Get CreatePasswordHash (Trim(sPassword)) (&sPassword) to bUpgrade
+                    If (not(bUpgrade)) Begin
+                        Error DFERR_PROGRAM "Password policy: error while upgrading your password hash"
+                    End
+
+                    Send OnSetUserPassword sUserId sPassword (&bOk)
+                    If (not(bOk)) Begin
+                        Error DFERR_PROGRAM "Password policy: error while upgrading your password hash"
+                    End
+                End
+            
+                // Scopes for this session
+                Send OnGetUserAuthorizedScopes of hoOidcProvider sUserId (psWebappClientId(Self)) (&asScopes)
+                Send OnGetClientInfo of hoOidcProvider (psWebappClientId(Self)) (&tClient)
+                Get OidcIntersectStringArray asScopes tClient.asAllowedScopes to asScopes
+                
+                // Always add "offline_access" scope for the own webapp's session even tho it might not be "allowed" otherwise sessions will end when the first access token is expired
+                // OidcIntersectStringArray returns a sorted array so we can use BinarySearchArray here
+                Move (BinarySearchArray(C_OIDC_SCOPE_OFFLINE_ACCESS, asScopes)) to iSearchIndex
+                If (iSearchIndex = -1) Begin // Add if not found
+                    Move (BinarySearchInsertPos()) to iSearchIndex
+                    Move (InsertInArray(asScopes, iSearchIndex, C_OIDC_SCOPE_OFFLINE_ACCESS)) to asScopes
+                End
+                
+                Move tClient.iAccessTokenLifetime   to tExpiries.iAccessTokenLifetime
+                Move tClient.iIDTokenLifetime       to tExpiries.iIDTokenLifetime
+                If (bRememberMe) Begin
+                    Move tClient.iRefreshTokenLifetime to tExpiries.iRefreshTokenLifetime
+                End
+                Else Begin
+                    // Override the refresh token expiry to be shorter
+                    Move (piSessionTimeout(Self) * 60) to tExpiries.iRefreshTokenLifetime
+                End
+                
+                // Generate the tokens
+                Get psSessionKey to sSessionKey // Should be set as UUID
+                If (SizeOfString(sSessionKey) = 0) Begin
+                    Error DFERR_PROGRAM "SessionKey not set. Please contact an administrator."
+                    Function_Return False
+                End
+                
+                // Add SK as custom claim (Access & Refresh token)
+                Move C_OIDC_CUSTOM_CLAIM_SESSION_KEY    to tCustomClaims.atAccessClaims[0].sName
+                Move sSessionKey                        to tCustomClaims.atAccessClaims[0].sValue
+                Move C_OIDC_CUSTOM_CLAIM_SESSION_KEY    to tCustomClaims.atRefreshClaims[0].sName
+                Move sSessionKey                        to tCustomClaims.atRefreshClaims[0].sValue
+                
+                Get GenerateTokens of hoOidcProvider sUserId (psWebappClientId(Self)) asScopes (&sIdToken) (&sAccessToken) (&sRefreshToken) (&ubiExpiresAt) sSessionKey "" "" tExpiries tCustomClaims to iRetVal
+                
+                If (iRetVal = C_OIDC_GENERATE_TOKENS_SUCCESS) Begin
+                    Send SetAccessTokenCookie sAccessToken ubiExpiresAt
+                    Send SetRefreshTokenCookie sRefreshToken
+                    
+                    Send OnValidateToken sAccessToken (&bOk) (&tToken)
+                    If (bOk) Begin // Should always be ok... just in case it is not
+                        Send OnUserAuthentication of hoOidcProvider sUserId (StrSplitToArray(tToken.sScope, C_OIDC_CHARACTER_SPACE))
+                    End
+                    
+                    Send UpdateSessionProperties False
+                    Send NotifyChangeRights
+                    Function_Return True
+                End
+            End
+        End
+        Else Begin
+             // This is added to delay latency to avoid hackers finding out whether the user exists or not.
+             Get VerifyPasswordHash "This is to delay the response latency." sPassword (&bUpgrade) to bOk
+        End
+        
+        Function_Return False
+    End_Function
+    
+    Function RefreshSession String sRefreshToken Returns Boolean
+        Handle hoOidcProvider
+        String sIdToken sAccessToken sSessionKey
+        Boolean bOk
+        tOidcJsonWebToken tToken
+        tOidcUserInfo tUserInfo
+        tOidcRefreshToken tRefreshTokenInfo
+        tOidcCustomClaims tCustomClaims
+        String[] asScopes
+        UBigInt ubiExpiresAt ubiExpiry
+        Integer iRetVal
+        tOidcExpiries tExpiries
+        tOidcClient tClient
+        
+        If (sRefreshToken = "") Function_Return False
+        
+        Get ProviderHandle to hoOidcProvider
+        If (hoOidcProvider = 0) ;
+            Function_Return False
+        
+        Send OnValidateToken of hoOidcProvider sRefreshToken (&bOk) (&tToken)
+        If (not(bOk)) ;
+            Function_Return False
+        
+        Send OnGetRefreshTokenInfo of hoOidcProvider tToken.sJTI (&tRefreshTokenInfo)
+        // Check revoked/used (or if the token is not found)
+        If (tRefreshTokenInfo.bRevoked or tRefreshTokenInfo.bUsed or tRefreshTokenInfo.sJTI <> tToken.sJTI) Begin
+            Function_Return False
+        End
+        
+        // Set Session key custom claim
+        Get CustomClaimValue of hoOidcProvider C_OIDC_CUSTOM_CLAIM_SESSION_KEY tToken.atCustomClaims to sSessionKey
+        Move C_OIDC_CUSTOM_CLAIM_SESSION_KEY    to tCustomClaims.atAccessClaims[0].sName
+        Move sSessionKey                        to tCustomClaims.atAccessClaims[0].sValue
+        Move C_OIDC_CUSTOM_CLAIM_SESSION_KEY    to tCustomClaims.atRefreshClaims[0].sName
+        Move sSessionKey                        to tCustomClaims.atRefreshClaims[0].sValue
+        
+        // Override expiry based on previous refresh token expiry
+        Send OnGetClientInfo of hoOidcProvider (psWebappClientId(Self)) (&tClient)
+        Move tClient.iAccessTokenLifetime       to tExpiries.iAccessTokenLifetime
+        Move tClient.iIDTokenLifetime           to tExpiries.iIDTokenLifetime
+        Move (tToken.ubiExp - tToken.ubiIat)    to tExpiries.iRefreshTokenLifetime
+        
+        Move (StrSplitToArray(tToken.sScope, C_OIDC_CHARACTER_SPACE)) to asScopes
+        Get GenerateTokensRefreshCode of hoOidcProvider tRefreshTokenInfo asScopes (&sIdToken) (&sAccessToken) (&sRefreshToken) (&ubiExpiresAt) tExpiries tCustomClaims to iRetVal
+        
+        If (iRetVal = C_OIDC_GENERATE_TOKENS_SUCCESS) Begin
+            Send OnConsumeRefreshCode of hoOidcProvider tToken.sJTI
+            Send OnValidateToken of hoOidcProvider sAccessToken (&bOk) (&tToken)
+            
+            If (not(bOk)) Begin
+                Function_Return False
+            End
+            
+            Send OnGetUserInfo of hoOidcProvider tToken.sSubject (&tUserInfo)
+            
+            Set psSessionKey    to sSessionKey
+            Set ptCurrentToken  to tToken
+            Set ptCurrentUser   to tUserInfo
+            
+            // Update the cookies
+            Send SetAccessTokenCookie sAccessToken ubiExpiresAt
+            Send SetRefreshTokenCookie sRefreshToken
+            Send UpdateSessionProperties False
+            Function_Return True
+        End
+        
+        Function_Return False
+    End_Function
+    
+    // Returns if an user is currently logged in
+    Function IsLoggedIn Returns Boolean
+        String sLoginName
+        Get psLoginName to sLoginName
+        Function_Return (sLoginName <> "")
+    End_Function
+    
+    //
+    // This procedure is called when validating a session and after logging in. Its purpose is to 
+    // update properties based on the session and user data. Augment this function to update 
+    // properties based. 
+    //
+    // Params:
+    //      bClear   True if the procedure is called before session validation to clear properties.
+    //
+    Procedure UpdateSessionProperties Boolean bClear
+        tOidcUserInfo tUserInfo
+        tOidcJsonWebToken tToken
+        
+        If (bClear) Begin
+            Set psLoginName to ""
+            Set psUsername to ""
+            
+            Set ptCurrentUser to tUserInfo
+            Set ptCurrentToken to tToken
+            
+            Send OnSessionPropertiesClear
+        End
+        Else Begin
+            Get ptCurrentUser to tUserInfo
+            
+            Set psLoginName to tUserInfo.sEmail
+            Set psUsername to tUserInfo.sPreferredUsername
+            
+            Send OnSessionPropertiesSet
+        End
+    End_Procedure
+    
+    Procedure SetDfWebAppCookie String sSessionKey UBigInt ubiExpiresAt
+        Send SetCookie (psSessionCookieName(Self)) sSessionKey ubiExpiresAt (psSessionCookiePath(Self)) (psSessionCookieDomain(Self)) (pbSessionCookieSecure(Self)) (pbSessionCookieHttpOnly(Self)) (psSessionCookieSameSite(Self))
+    End_Procedure
+    
+    Procedure SetAccessTokenCookie String sAccessToken UBigInt ubiExpiresAt
+        Send SetCookie (psAccessTokenCookieName(Self)) sAccessToken ubiExpiresAt (psSessionCookiePath(Self)) (psSessionCookieDomain(Self)) (pbSessionCookieSecure(Self)) (pbSessionCookieHttpOnly(Self)) (psSessionCookieSameSite(Self))
+    End_Procedure
+    
+    Procedure SetRefreshTokenCookie String sRefreshToken
+        Handle hoOidcProvider
+        Boolean bOk
+        tOidcJsonWebToken tToken
+        UBigInt ubiNow
+        Integer iExpiration
+        
+        If (sRefreshToken <> "") Begin
+            Get ProviderHandle to hoOidcProvider
+            If (hoOidcProvider = 0) ;
+                Procedure_Return
+            
+            Send OnValidateToken of hoOidcProvider sRefreshToken (&bOk) (&tToken)
+            If (bOk) Begin
+                Get CurrentUnixTime to ubiNow
+                Move (tToken.ubiExp - ubiNow) to iExpiration                
+            End
+        End
+        Else Begin
+            Move -1 to iExpiration
+        End
+        
+        Send SetCookie (psRefreshTokenCookieName(Self)) sRefreshToken iExpiration (psSessionCookiePath(Self)) (psSessionCookieDomain(Self)) (pbSessionCookieSecure(Self)) (pbSessionCookieHttpOnly(Self)) (psSessionCookieSameSite(Self))
+    End_Procedure
+    
+    { MethodType=Event }
+    Procedure OnSessionPropertiesSet
+        //  Empty event stub
+    End_Procedure
+    
+    { MethodType=Event }
+    Procedure OnSessionPropertiesClear
+        //  Empty event stub
+    End_Procedure
+    
+    // Ends a users current session, also removes the access token cookie from the client
+    Procedure EndSession
+        Handle hoOidcProvider
+        String sSessionKey sRefreshToken
+        Boolean bOk
+        tOidcJsonWebToken tToken
+
+        Set psSessionKey to ""
+        Get ProviderHandle to hoOidcProvider
+        
+        If (hoOidcProvider = 0) ;
+            Procedure_Return
+            
+        Get GetCookie (psRefreshTokenCookieName(Self)) to sRefreshToken
+        If (SizeOfString(sRefreshToken) > 0) Begin
+            Send OnValidateToken of hoOidcProvider sRefreshToken (&bOk) (&tToken)
+            // Still valid => Revoke
+            If (bOk) Begin
+                Send OnTokenRevocation of hoOidcProvider tToken.sJTI
+            End
+        End
+        
+        // Wipe the cookies
+        Send SetDfWebAppCookie "" -1
+        Send SetAccessTokenCookie "" -1
+        Send SetRefreshTokenCookie ""
+        
+        Send UpdateSessionProperties True
+    End_Procedure
+End_Class

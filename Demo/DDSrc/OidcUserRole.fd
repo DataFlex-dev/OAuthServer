@@ -1,0 +1,5 @@
+#REPLACE FILE12 OidcUserRole
+#REPLACE OidcUserRole.File_Number |CI12
+#REPLACE OidcUserRole.SubId |FS12,1
+#REPLACE OidcUserRole.RoleId |FN12,2
+#REPLACE OidcUserRole.AssignedAt |FM12,3

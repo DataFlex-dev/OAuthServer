@@ -1,0 +1,13 @@
+Struct tOidcAuthorizationCodeInfo
+    String   sAuthCode
+    Boolean  bValid                 // Used already or expired 
+    String   sClientId
+    String   sRedirectURI           // Must be the same as the redirect_uri passed to the token endpoint
+    String   sCodeChallenge         // For PKCE 
+    String   sCodeChallengeMethod   // 'S256' or 'plain'
+    String   sNonce
+    String   sScope
+    Boolean  bScopeChanged
+    String   sUserId                // The subject this was issued for 
+    DateTime dtCreatedAt
+End_Struct

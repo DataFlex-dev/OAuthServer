@@ -1,0 +1,17 @@
+Use Oidc\cOidcClaimResolver.pkg
+
+Class cMyDemoResolver is a cOidcClaimResolver
+    Procedure OnResolveClaim tOidcUserInfo tUserInfo tOidcClient tClient String sClaim Boolean bIsSystemScope String  ByRef sValue
+        // Dont forward send, we should implement this here
+        
+        Case Begin
+            Case (sClaim = "download_center_role")
+                Move "example" to sValue
+                Case Break
+            
+            Case Else
+                // By default do nothing
+        Case End
+    End_Procedure
+    
+End_Class

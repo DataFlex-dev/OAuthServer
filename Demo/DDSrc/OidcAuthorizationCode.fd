@@ -1,0 +1,13 @@
+#REPLACE FILE1 OidcAuthorizationCode
+#REPLACE OidcAuthorizationCode.File_Number |CI1
+#REPLACE OidcAuthorizationCode.AuthCode |FS1,1
+#REPLACE OidcAuthorizationCode.Client_id |FS1,2
+#REPLACE OidcAuthorizationCode.RedirectURI |FS1,3
+#REPLACE OidcAuthorizationCode.UserID |FS1,4
+#REPLACE OidcAuthorizationCode.Scope |FS1,5
+#REPLACE OidcAuthorizationCode.Nonce |FS1,6
+#REPLACE OidcAuthorizationCode.CodeChallenge |FS1,7
+#REPLACE OidcAuthorizationCode.CodeChallengeMethod |FS1,8
+#REPLACE OidcAuthorizationCode.CreatedAt |FM1,9
+#REPLACE OidcAuthorizationCode.Valid |FN1,10
+#REPLACE OidcAuthorizationCode.ScopeChanged |FN1,11
