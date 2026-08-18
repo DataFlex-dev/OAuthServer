@@ -1,7 +1,7 @@
 {
     "dependencies": [
         "DataFlex-dev/JsonWebToken#<2.0.0",
-        "DataFlex-dev/Security (Libsodium)#<2.0.0"
+        "DataFlex-dev/Security - Libsodium#<2.0.0"
     ],
     "description": "The official OAuth Server library for DataFlex WebApps",
     "df": 26.0,
@@ -15,7 +15,7 @@
             "${Programs}\\libcrypto-3.dll"
         ],
         "license": "BSD-3-Clause",
-        "version": "1.1.0"
+        "version": "1.1.1"
     },
     "paths": {
         "appSrc": [

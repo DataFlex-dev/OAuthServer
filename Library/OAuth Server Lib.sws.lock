@@ -3,10 +3,10 @@
         "DataFlex-dev/JsonWebToken": {
             "ref": "1.0.0"
         },
-        "DataFlex-dev/Security (Libsodium)": {
+        "DataFlex-dev/Security - Core": {
             "ref": "1.0.0"
         },
-        "DataFlex-dev/Security (core)": {
+        "DataFlex-dev/Security - Libsodium": {
             "ref": "1.0.0"
         }
     },
