@@ -1,6 +1,14 @@
 Oidc Spec DataFlex Account
 
 **Discovery endpoint**
+
+IIS route setup (no URL Rewrite)
+Keep `cOidcWellKnownHandler.psPath` set to `.well-known`.
+
+After compiling the WebApp, edit the generated root `AppHtml/web.config`. Find the `<location path=".well-known">` mapping for `object="oOidcWellKnown"` and change it to `<location path="~/.well-known">`. Keep the generated `application` and `object` values. The `~/` prefix is only for IIS configuration; the public URLs remain `/.well-known/openid-configuration` and `/.well-known/jwks.json`.
+
+Add `manual="true"` to that `<dataflexHttpModule>` element so Studio preserves the manually adjusted mapping during later compiles. If the registered WebApp name, object, or handler settings change, update the preserved mapping manually as well.
+
 Used to discover every needed endpoint, and it will tell clients what scopes and claims are supported etc.
 GET /.well-known/openid-configuration HTTP/1.1
 Host: account.dataflex.dev
