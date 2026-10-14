@@ -328,6 +328,9 @@ Function ApplicationBaseURL for cWebHttpHandler Returns String
     
     Get CurrentRequestURI to sUrl
     Get psPath to sPath
+    If (Pos("~/", sPath) = 1) Begin
+        Move (Right(sPath, SizeOfString(sPath) - 2)) to sPath
+    End
     
     Move (Pos(sPath, sUrl)) to iPos
     If (iPos > 0) Begin
