@@ -75,6 +75,9 @@ Class cOidcWellKnownHandler is a cWebHttpHandler
         Move (sIssuerURI + sOidcBasePath) to sOidcURI
         
         Get psPath to sWellKnownPath
+        If (Pos("~/", sWellKnownPath) = 1) Begin
+            Move (Right(sWellKnownPath, SizeOfString(sWellKnownPath) - 2)) to sWellKnownPath
+        End
         Send OidcEnsureTrailingSlash (&sWellKnownPath)
         
         // Issuer MUST be the base URI from where this openid-configuration is read, this can be setup using the OnGetApplicationBaseUrl in the OidcProvider

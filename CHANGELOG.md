@@ -1,10 +1,17 @@
 # Changelog
 
 ## Table of Contents
+- [1.1.2](#112)
 - [1.1.0](#110)
 
 With every version, there are some improvements, the improvements are listed below per version number.
-Current Version: 1.1.0
+Current Version: 1.1.2
+
+
+## 1.1.2
+- Preserve the canonical `.well-known` handler path while normalizing a leading `~/` when generating endpoint URLs.
+- Document the IIS root `web.config` adjustment from `.well-known` to `~/.well-known`, retaining the compiler-generated application and object mapping.
+- Mark the demo mapping as manual so Studio preserves the IIS-specific path adjustment across recompiles.
 
 ## 1.1.0
 - Introduced the OAuthServer library as a DataFlex OAuth 2.0 / OpenID Connect authorization server implementation.
